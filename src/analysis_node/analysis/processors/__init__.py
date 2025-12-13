@@ -1,0 +1,2 @@
+from analysis_node.analysis.processors.age_gender import AgeGenderProcessor
+from analysis_node.analysis.processors.emotion import EmotionProcessor
