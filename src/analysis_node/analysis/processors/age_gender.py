@@ -17,10 +17,7 @@ logger = logging.getLogger(__name__)
 
 
 class AgeGenderModel(Wav2Vec2PreTrainedModel):
-    r"""Speech emotion classifier."""
-
     def __init__(self, config):
-
         super().__init__(config)
 
         self.config = config
@@ -44,6 +41,11 @@ class AgeGenderModel(Wav2Vec2PreTrainedModel):
 
 
 class AgeGenderProcessor(AggregateProcessor):
+    """
+    Speech classifier.
+    Determines the age and gender of the speaker.
+    """
+
     SMALL_MODEL_NAME = "audeering/wav2vec2-large-robust-6-ft-age-gender"
     LARGE_MODEL_NAME = "audeering/wav2vec2-large-robust-24-ft-age-gender"
     REQUIRED_SAMPLING_RATE = 16000
@@ -66,13 +68,13 @@ class AgeGenderProcessor(AggregateProcessor):
                 "or numbers: [6, 24] to specify the model size."
             )
 
-        super().__init__(model_name)
-        self.device = torch.device(device)
+        super().__init__(model_name, device)
 
         self.processor = Wav2Vec2Processor.from_pretrained(model_name)
         self.model = AgeGenderModel.from_pretrained(model_name)
-        self.model.to(self.device)
+        self.model.to(self.device)  # pyright: ignore
         self.model.eval()
+
         logger.info(f"Created {self.__class__.__name__}")
 
     @torch.no_grad()
@@ -112,8 +114,8 @@ class AgeGenderProcessor(AggregateProcessor):
 
         inputs = self.processor(
             audio,
-            sampling_rate=sampling_rate,
-            return_tensors="pt",
+            sampling_rate=sampling_rate,  # pyright: ignore
+            return_tensors="pt",  # pyright: ignore
         )
 
         input_values = inputs["input_values"].to(self.device)
@@ -128,7 +130,15 @@ class AgeGenderProcessor(AggregateProcessor):
         sample_rate, waveform = wavfile.read(segment_file)
         vals = self(waveform, sample_rate)
         metrics = [
-            Metric(k, MetricType.INT if k == "age" else MetricType.FLOAT, v)
+            (
+                Metric(
+                    k,
+                    MetricType.INT,
+                    v * 100,
+                )
+                if k == "age"
+                else Metric(k, MetricType.FLOAT, v)
+            )
             for (k, v) in zip(["age", "female", "male", "child"], vals[0])
         ]
         return MetricCollection(self._model_name, metrics)

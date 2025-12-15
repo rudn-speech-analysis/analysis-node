@@ -15,7 +15,11 @@ from analysis_node.messages import (
     RecordingMetrics,
     Segment,
 )
-from analysis_node.analysis.processors import EmotionProcessor, AgeGenderProcessor
+from analysis_node.analysis.processors import (
+    VadEmotionProcessor,
+    CatEmotionProcessor,
+    AgeGenderProcessor,
+)
 from analysis_node.analysis.preprocessing import (
     get_audio_metrics,
     split_audio,
@@ -34,17 +38,16 @@ class AnalysisPipeline:
         cfg = config.values["models"]
 
         self.whisper = whisper.load_model(cfg["whisper"]["model"]).to(device)
-        emotion_pipeline = EmotionProcessor(device)
-        age_gender_pipeline = AgeGenderProcessor(
-            cfg["wav2vec2_age_gender"]["num_layers"],
-            device,
-        )
 
         self.per_segment_processors: dict[str, Processor] = {
-            "emotion": emotion_pipeline,
+            "vad_emotion": VadEmotionProcessor(device),
+            "cat_emotion": CatEmotionProcessor(device),
         }
         self.per_channel_processors: dict[str, AggregateProcessor] = {
-            "age_gender": age_gender_pipeline,
+            "age_gender": AgeGenderProcessor(
+                cfg["wav2vec2_age_gender"]["num_layers"],
+                device,
+            ),
         }
         self.config = config
 
@@ -128,6 +131,8 @@ class AnalysisPipeline:
             whisper_data_log = list()
 
             last_progress = 0
+            yield ProgressMsg(last_progress)
+
             for (
                 segment_metrics,
                 channel_metrics,

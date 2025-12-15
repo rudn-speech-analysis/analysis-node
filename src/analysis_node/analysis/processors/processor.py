@@ -1,12 +1,14 @@
 from collections import defaultdict, Counter
 import pathlib
+import torch
 
 from analysis_node.messages import MetricType, Metric, MetricCollection
 
 
 class Processor:
-    def __init__(self, model_name: str):
+    def __init__(self, model_name: str, device: str):
         self._model_name = model_name
+        self.device = torch.device(device)
 
     def process(self, segment_file: pathlib.Path | str) -> MetricCollection:
         raise NotImplemented

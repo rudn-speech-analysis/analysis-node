@@ -17,11 +17,8 @@ from analysis_node.messages import MetricType, Metric, MetricCollection
 logger = logging.getLogger(__name__)
 
 
-class EmotionModel(Wav2Vec2PreTrainedModel):
-    r"""Speech emotion classifier."""
-
+class VadEmotionModel(Wav2Vec2PreTrainedModel):
     def __init__(self, config):
-
         super().__init__(config)
 
         self.config = config
@@ -42,18 +39,23 @@ class EmotionModel(Wav2Vec2PreTrainedModel):
         return hidden_states, logits
 
 
-class EmotionProcessor(Processor):
+class VadEmotionProcessor(Processor):
+    r"""
+    Speech emotion classifier.
+    Outupts Valency, Arousal and Dominance values.
+    """
+
     MODEL_NAME = "audeering/wav2vec2-large-robust-12-ft-emotion-msp-dim"
     REQUIRED_SAMPLING_RATE = 16000
 
     def __init__(self, device: str = "cpu"):
-        super().__init__(self.MODEL_NAME)
-        self.device = torch.device(device)
+        super().__init__(self.MODEL_NAME, device)
 
         self.processor = Wav2Vec2Processor.from_pretrained(self.MODEL_NAME)
-        self.model = EmotionModel.from_pretrained(self.MODEL_NAME)
-        self.model.to(self.device)
+        self.model = VadEmotionModel.from_pretrained(self.MODEL_NAME)
+        self.model.to(self.device)  # pyright: ignore
         self.model.eval()
+
         logger.info(f"Created {self.__class__.__name__}")
 
     @torch.no_grad()
@@ -93,8 +95,8 @@ class EmotionProcessor(Processor):
 
         inputs = self.processor(
             audio,
-            sampling_rate=sampling_rate,
-            return_tensors="pt",
+            sampling_rate=sampling_rate,  # pyright: ignore
+            return_tensors="pt",  # pyright: ignore
         )
 
         input_values = inputs["input_values"].to(self.device)
