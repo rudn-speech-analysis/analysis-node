@@ -3,7 +3,7 @@ import pydub
 import tempfile
 import pathlib
 from analysis_node.config import Config
-from analysis_node.messages import AudioMetrics
+from analysis_node.messages import Metric, MetricType, MetricCollection
 
 
 def split_audio(input_file) -> Tuple[pathlib.Path, pathlib.Path]:
@@ -66,7 +66,7 @@ def segmentize(
             yield (segment_data, pathlib.Path(tmp_file.name))
 
 
-def get_audio_metrics(audio_file: pathlib.Path | str) -> AudioMetrics:
+def get_audio_metrics(audio_file: pathlib.Path | str) -> MetricCollection:
     audio = pydub.AudioSegment.from_file(
         audio_file
     )  # Replace with your file path and extension
@@ -82,12 +82,43 @@ def get_audio_metrics(audio_file: pathlib.Path | str) -> AudioMetrics:
     rms = audio.rms  # Root mean square (average power/amplitude)
     raw_data_length = len(audio.raw_data)  # Length of raw audio bytes
 
-    return AudioMetrics(
-        duration_seconds=duration_seconds,
-        sample_rate=sample_rate,
-        channels=channels,
-        bit_depth=bit_depth,
-        max_dbfs=max_dbfs,
-        rms=rms,
-        raw_data_length=raw_data_length,
+    return MetricCollection(
+        "pydub",
+        [
+            Metric(
+                "duration seconds",
+                MetricType.FLOAT,
+                duration_seconds,
+            ),
+            Metric(
+                "sample rate",
+                MetricType.INT,
+                sample_rate,
+            ),
+            Metric(
+                "channels",
+                MetricType.INT,
+                channels,
+            ),
+            Metric(
+                "bit depth",
+                MetricType.INT,
+                bit_depth,
+            ),
+            Metric(
+                "max dbfs",
+                MetricType.FLOAT,
+                max_dbfs,
+            ),
+            Metric(
+                "rms",
+                MetricType.INT,
+                rms,
+            ),
+            Metric(
+                "raw data length",
+                MetricType.INT,
+                raw_data_length,
+            ),
+        ],
     )

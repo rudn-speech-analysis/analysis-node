@@ -1,18 +1,19 @@
-from typing import Generator, Any, Tuple
+from typing import Generator, Tuple
 import whisper
 import dacite
 import pathlib
 import logging
 
-from analysis_node.analysis.processors.processor import Processor
+from analysis_node.analysis.processors.processor import AggregateProcessor, Processor
 from analysis_node.config import Config
-from analysis_node.utils import fetch_to_tmp_file
+from analysis_node.utils import fetch_to_tmp_file, list_dict_to_dict_list
 from analysis_node.messages import (
+    MetricCollection,
     AnalysisRequest,
     ChannelMetrics,
     ProgressMsg,
     RecordingMetrics,
-    WhisperMetrics,
+    Segment,
 )
 from analysis_node.analysis.processors import EmotionProcessor, AgeGenderProcessor
 from analysis_node.analysis.preprocessing import (
@@ -20,7 +21,7 @@ from analysis_node.analysis.preprocessing import (
     split_audio,
     segmentize,
 )
-from analysis_node.analysis.postprocessing import prepare_channel_metrics_report
+from analysis_node.analysis.postprocessing import get_talk_percent, WhisperMetrics
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +43,7 @@ class AnalysisPipeline:
         self.per_segment_processors: dict[str, Processor] = {
             "emotion": emotion_pipeline,
         }
-        self.per_channel_processors: dict[str, Processor] = {
+        self.per_channel_processors: dict[str, AggregateProcessor] = {
             "age_gender": age_gender_pipeline,
         }
         self.config = config
@@ -52,31 +53,65 @@ class AnalysisPipeline:
     def _collect_metrics_per_segment(
         self,
         segment_file,
-    ) -> Tuple[dict[str, Any], dict[str, Any]]:
+    ) -> Tuple[dict[str, MetricCollection], dict[str, MetricCollection]]:
+        def process(processors: dict[str, Processor]) -> dict[str, MetricCollection]:
+            return {
+                proc_name: processor.process(segment_file)
+                for proc_name, processor in processors.items()
+            }
+
         return (
-            {
-                name: processor.process(segment_file)
-                for name, processor in self.per_segment_processors.items()
-            },
-            {
-                name: processor.process(segment_file)
-                for name, processor in self.per_channel_processors.items()
-            },
+            process(self.per_segment_processors),
+            process(self.per_channel_processors),  # pyright: ignore
         )
 
     def _collect_metrics_per_channel(
         self,
         channel_file: pathlib.Path | str,
-    ) -> Generator[Tuple[dict, dict], None, None]:
+    ) -> Generator[
+        Tuple[dict[str, MetricCollection], dict[str, MetricCollection], WhisperMetrics],
+        None,
+        None,
+    ]:
         for segment_data, segment_path in segmentize(
             channel_file, self.whisper, self.config
         ):
             per_segment, per_channel = self._collect_metrics_per_segment(segment_path)
-            per_segment["whisper"] = dacite.from_dict(
+            whisper_data = dacite.from_dict(
                 data_class=WhisperMetrics,
                 data=segment_data,
             )
-            yield per_segment, per_channel
+            yield per_segment, per_channel, whisper_data
+
+    def _prepare_channel_metrics_report(
+        self,
+        channel_idx: int,
+        segment_metrics_log: list[dict[str, MetricCollection]],
+        channel_metrics_log: list[dict[str, MetricCollection]],
+        whisper_data_log: list[WhisperMetrics],
+        total_audio_duration_sec: float,
+    ) -> ChannelMetrics:
+        channel_metrics = list_dict_to_dict_list(channel_metrics_log)
+        aggregated_channel_metrics = [
+            self.per_channel_processors[k].aggregate(v)
+            for k, v in channel_metrics.items()
+        ]
+        segments = [
+            Segment(w.start, w.end, w.text, list(sm.values()))
+            for sm, w in zip(segment_metrics_log, whisper_data_log)
+        ]
+
+        talk_percent = get_talk_percent(
+            whisper_data_log,
+            total_audio_duration_sec,
+        )
+
+        return ChannelMetrics(
+            channel_idx,
+            talk_percent,
+            segments,
+            aggregated_channel_metrics,
+        )
 
     def __call__(self, request: AnalysisRequest) -> MetricsGenerator:
         cfg = self.config.values["reporting"]
@@ -87,11 +122,22 @@ class AnalysisPipeline:
         metrics = []
         for channel in channel_files:
             logger.info(f"Begin processing channel {len(metrics)}")
-            raw_channel_metrics = []
+
+            segment_metrics_log = list()
+            channel_metrics_log = list()
+            whisper_data_log = list()
+
             last_progress = 0
-            for raw_segment_metrics in self._collect_metrics_per_channel(channel):
-                end = raw_segment_metrics[0]["whisper"].end
-                percent_done = (end / audio_metrics.duration_seconds) * 100
+            for (
+                segment_metrics,
+                channel_metrics,
+                whisper_data,
+            ) in self._collect_metrics_per_channel(channel):
+                end = whisper_data.end
+                duration_seconds: float = audio_metrics[
+                    "duration seconds"
+                ].value  # pyright: ignore
+                percent_done: int = round((end / duration_seconds) * 100)
 
                 if percent_done > last_progress + cfg["progress_delta"]:
                     last_progress = percent_done
@@ -100,22 +146,20 @@ class AnalysisPipeline:
                     )
                     yield ProgressMsg(percent_done)
 
-                raw_channel_metrics.append(raw_segment_metrics)
-
-            try:
-                raw_segment_metrics, raw_channel_metrics = zip(*raw_channel_metrics)
-            except:
-                raw_segment_metrics, raw_channel_metrics = list(dict()), list(dict())
+                segment_metrics_log.append(segment_metrics)
+                channel_metrics_log.append(channel_metrics)
+                whisper_data_log.append(whisper_data)
 
             logger.info(f"Preparing channel metrics report for channel {len(metrics)}")
-            cm = prepare_channel_metrics_report(
+            cm = self._prepare_channel_metrics_report(
                 len(metrics),
-                raw_segment_metrics,  # pyright: ignore
-                raw_channel_metrics,  # pyright: ignore
-                audio_metrics.duration_seconds,
+                segment_metrics_log,
+                channel_metrics_log,
+                whisper_data_log,
+                duration_seconds,
             )
             metrics.append(cm)
 
             yield cm
 
-        return RecordingMetrics(audio_metrics)
+        return RecordingMetrics([audio_metrics])

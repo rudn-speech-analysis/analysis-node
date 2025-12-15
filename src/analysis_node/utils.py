@@ -3,6 +3,7 @@ import tempfile
 import pathlib
 import json
 import numpy as np
+from dataclasses import fields, is_dataclass
 
 
 # Source - https://stackoverflow.com/a/34073559
@@ -37,3 +38,18 @@ class NpEncoder(json.JSONEncoder):
         if isinstance(obj, np.ndarray):
             return obj.tolist()
         return super(NpEncoder, self).default(obj)
+
+
+def list_dict_to_dict_list(data: list[dict]) -> dict[str, list]:
+    """
+    list[dict[str, Any]] -> dict[str, list[Any]]
+    list[dataclass[str, num]] -> dict[str, list[num]]
+    """
+
+    if not data:
+        return dict()
+    if is_dataclass(data[0]):
+        field_names = [field.name for field in fields(data[0])]
+        return {name: [getattr(obj, name) for obj in data] for name in field_names}
+    else:
+        return {key: [d[key] for d in data] for key in data[0]}

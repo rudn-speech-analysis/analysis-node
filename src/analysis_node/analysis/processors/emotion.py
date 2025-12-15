@@ -11,7 +11,7 @@ import logging
 
 from analysis_node.analysis.processors.processor import Processor
 from analysis_node.analysis.processors.utils import ModelHead, resample_to
-from analysis_node.messages import EmotionMetrics
+from analysis_node.messages import MetricType, Metric, MetricCollection
 
 
 logger = logging.getLogger(__name__)
@@ -42,11 +42,12 @@ class EmotionModel(Wav2Vec2PreTrainedModel):
         return hidden_states, logits
 
 
-class EmotionProcessor(Processor[EmotionMetrics]):
+class EmotionProcessor(Processor):
     MODEL_NAME = "audeering/wav2vec2-large-robust-12-ft-emotion-msp-dim"
     REQUIRED_SAMPLING_RATE = 16000
 
     def __init__(self, device: str = "cpu"):
+        super().__init__(self.MODEL_NAME)
         self.device = torch.device(device)
 
         self.processor = Wav2Vec2Processor.from_pretrained(self.MODEL_NAME)
@@ -104,8 +105,11 @@ class EmotionProcessor(Processor[EmotionMetrics]):
 
         return result.cpu().numpy()
 
-    def process(self, segment_file: pathlib.Path | str) -> EmotionMetrics:
+    def process(self, segment_file: pathlib.Path | str) -> MetricCollection:
         sample_rate, waveform = wavfile.read(segment_file)
         vals = self(waveform, sample_rate)
-        metrics = {k: v for (k, v) in zip(["arousal", "dominance", "valence"], vals[0])}
-        return EmotionMetrics(**metrics)
+        metrics = [
+            Metric(k, MetricType.FLOAT, v)
+            for (k, v) in zip(["arousal", "dominance", "valence"], vals[0])
+        ]
+        return MetricCollection(self._model_name, metrics)

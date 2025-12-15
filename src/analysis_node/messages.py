@@ -1,5 +1,6 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Generic, TypeVar
+from enum import StrEnum
 
 T = TypeVar("T")
 
@@ -18,93 +19,81 @@ class AnalysisRequest:
 KafkaAnalysisRequest = KafkaEnvelope[AnalysisRequest]
 
 
+class MetricType(StrEnum):
+    INT = "int"
+    FLOAT = "float"
+    BOOL = "bool"
+    STR = "str"
+
+
 @dataclass
-class AgeGenderMetrics:
-    age: int
-    male: float
-    female: float
-    child: float
+class Metric:
+    name: str
+    type: MetricType
+    value: int | float | bool | str
+    unit: str | None = "$"
+    description: str | None = None
+
+
+@dataclass
+class MetricCollection:
+    provider: str
+    metrics: list[Metric]
+    description: str | None = None
 
     def __post_init__(self):
-        if isinstance(self.age, float):
-            self.age = round(self.age)
+        self._keys = [m.name for m in self.metrics]
+
+    def __getitem__(self, key: str) -> Metric:
+        return self.metrics[self._keys.index(key)]
 
 
 @dataclass
-class EmotionMetrics:
-    arousal: float
-    dominance: float
-    valence: float
-
-
-@dataclass
-class WordMetrics:
-    word: str
-    start: float
-    end: float
-    probability: float
-
-
-@dataclass
-class WhisperMetrics:
-    id: int
-    seek: int
+class Segment:
     start: float
     end: float
     text: str
-    tokens: list[int]
-    temperature: float
-    avg_logprob: float
-    compression_ratio: float
-    no_speech_prob: float
-    words: list[WordMetrics]
+    metrics: list[MetricCollection]
 
 
 @dataclass
-class SegmentMetrics:
-    emotion: EmotionMetrics
-    whisper: WhisperMetrics
-
-
-@dataclass
-class ChannelMetrics:
-    idx: int
-    age_gender: AgeGenderMetrics
-    talk_percent: float
-    segments: list[SegmentMetrics]
+class BaseMsg:
+    _kind: str = field(init=False)
 
     def __post_init__(self):
+        self._kind = self.__class__.__name__
+
+
+@dataclass
+class ChannelMetrics(BaseMsg):
+    idx: int
+    talk_percent: float
+    segments: list[Segment]
+    metrics: list[MetricCollection]
+
+    def __post_init__(self):
+        super().__post_init__()
         if isinstance(self.idx, float):
             self.idx = round(self.idx)
 
 
 @dataclass
-class ProgressMsg:
+class ProgressMsg(BaseMsg):
     percent_done: int
 
     def __post_init__(self):
+        super().__post_init__()
         if isinstance(self.percent_done, float):
             self.percent_done = round(self.percent_done)
 
 
 @dataclass
-class AudioMetrics:
-    duration_seconds: float
-    sample_rate: int
-    channels: int
-    bit_depth: int
-    max_dbfs: float
-    rms: int
-    raw_data_length: int
+class RecordingMetrics(BaseMsg):
+    metrics: list[MetricCollection]
 
 
 @dataclass
-class RecordingMetrics:
-    audio: AudioMetrics
-
-
-@dataclass
-class ErrorMsg:
+class ErrorMsg(BaseMsg):
     error: str
     trace: str
 

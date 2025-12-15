@@ -9,9 +9,9 @@ from transformers.models.wav2vec2.modeling_wav2vec2 import (
 from scipy.io import wavfile
 import logging
 
-from analysis_node.analysis.processors.processor import Processor
+from analysis_node.analysis.processors.processor import AggregateProcessor
 from analysis_node.analysis.processors.utils import ModelHead, resample_to
-from analysis_node.messages import AgeGenderMetrics
+from analysis_node.messages import MetricType, Metric, MetricCollection
 
 logger = logging.getLogger(__name__)
 
@@ -43,14 +43,12 @@ class AgeGenderModel(Wav2Vec2PreTrainedModel):
         return hidden_states, logits_age, logits_gender
 
 
-class AgeGenderProcessor(Processor[AgeGenderMetrics]):
+class AgeGenderProcessor(AggregateProcessor):
     SMALL_MODEL_NAME = "audeering/wav2vec2-large-robust-6-ft-age-gender"
     LARGE_MODEL_NAME = "audeering/wav2vec2-large-robust-24-ft-age-gender"
     REQUIRED_SAMPLING_RATE = 16000
 
     def __init__(self, size: str | int = "small", device: str = "cpu"):
-        self.device = torch.device(device)
-
         if isinstance(size, str):
             if size not in {"small", "large"}:
                 ValueError('Please select one of "large", "small" models sizes.')
@@ -67,6 +65,9 @@ class AgeGenderProcessor(Processor[AgeGenderMetrics]):
                 'Please use either strings: ["small", "large"] '
                 "or numbers: [6, 24] to specify the model size."
             )
+
+        super().__init__(model_name)
+        self.device = torch.device(device)
 
         self.processor = Wav2Vec2Processor.from_pretrained(model_name)
         self.model = AgeGenderModel.from_pretrained(model_name)
@@ -123,9 +124,11 @@ class AgeGenderProcessor(Processor[AgeGenderMetrics]):
 
         return result.cpu().numpy()
 
-    def process(self, segment_file: pathlib.Path | str) -> AgeGenderMetrics:
+    def process(self, segment_file: pathlib.Path | str) -> MetricCollection:
         sample_rate, waveform = wavfile.read(segment_file)
         vals = self(waveform, sample_rate)
-        metrics = {k: v for (k, v) in zip(["age", "female", "male", "child"], vals[0])}
-        metrics["age"] = int(metrics["age"] * 100)
-        return AgeGenderMetrics(**metrics)
+        metrics = [
+            Metric(k, MetricType.INT if k == "age" else MetricType.FLOAT, v)
+            for (k, v) in zip(["age", "female", "male", "child"], vals[0])
+        ]
+        return MetricCollection(self._model_name, metrics)
