@@ -36,7 +36,6 @@ dependencies:
 
   - pip
   - pip:
-      - funasr
       - openai-whisper
 
       - triton @ https://repo.radeon.com/rocm/manylinux/rocm-rel-7.1.1/triton-3.5.1%2Brocm7.1.1.gita272dfa8-cp313-cp313-linux_x86_64.whl

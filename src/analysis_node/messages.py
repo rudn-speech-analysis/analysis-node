@@ -31,7 +31,7 @@ class Metric:
     name: str
     type: MetricType
     value: int | float | bool | str
-    unit: str | None = "$"
+    unit: str | None = "¤"
     description: str | None = None
 
 
@@ -67,7 +67,6 @@ class BaseMsg:
 @dataclass
 class ChannelMetrics(BaseMsg):
     idx: int
-    talk_percent: float
     segments: list[Segment]
     metrics: list[MetricCollection]
 
@@ -98,6 +97,8 @@ class ErrorMsg(BaseMsg):
     trace: str
 
 
+KafkaMsgOption = RecordingMetrics | ChannelMetrics | ProgressMsg | ErrorMsg
+
 KafkaAnalysisResponse = KafkaEnvelope[
-    RecordingMetrics | ChannelMetrics | ProgressMsg | ErrorMsg
+    KafkaMsgOption
 ]

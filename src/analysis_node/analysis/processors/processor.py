@@ -25,6 +25,7 @@ class AggregateProcessor(Processor):
         metric_values = defaultdict(list)
         metric_types = dict()
         metric_descriptions = dict()  # To store first non-None description per metric
+        metric_units = dict()
 
         for mc in metrics:
             for m in mc.metrics:
@@ -36,6 +37,7 @@ class AggregateProcessor(Processor):
                         )
                 else:
                     metric_types[m.name] = m.type
+                    metric_units[m.name] = m.unit
 
                 # Collect value
                 metric_values[m.name].append(m.value)
@@ -52,6 +54,7 @@ class AggregateProcessor(Processor):
 
             typ = metric_types[name]
             description = metric_descriptions.get(name)  # May be None
+            unit = metric_units.get(name)
 
             if typ in (MetricType.INT, MetricType.FLOAT):
                 # Convert to float for mean calculation
@@ -79,7 +82,8 @@ class AggregateProcessor(Processor):
 
             aggregated_metrics.append(
                 Metric(
-                    name=name, type=agg_type, value=agg_value, description=description
+                    name=name, type=agg_type, value=agg_value, description=description,
+                    unit=unit
                 )
             )
 

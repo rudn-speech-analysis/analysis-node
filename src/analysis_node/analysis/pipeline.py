@@ -8,9 +8,11 @@ from analysis_node.analysis.processors.processor import AggregateProcessor, Proc
 from analysis_node.config import Config
 from analysis_node.utils import fetch_to_tmp_file, list_dict_to_dict_list
 from analysis_node.messages import (
+    Metric,
     MetricCollection,
     AnalysisRequest,
     ChannelMetrics,
+    MetricType,
     ProgressMsg,
     RecordingMetrics,
     Segment,
@@ -108,10 +110,22 @@ class AnalysisPipeline:
             whisper_data_log,
             total_audio_duration_sec,
         )
+        aggregated_channel_metrics.append(
+            MetricCollection(
+                provider='whisper',
+                description='Aggregate metrics from Whisper',
+                metrics=[Metric(
+                    name='talk percent',
+                    type=MetricType.FLOAT,
+                    value=talk_percent,
+                    unit='%',
+                    description='Fraction of time that this channel was talking'
+                )]
+            )
+        )
 
         return ChannelMetrics(
             channel_idx,
-            talk_percent,
             segments,
             aggregated_channel_metrics,
         )
@@ -140,7 +154,7 @@ class AnalysisPipeline:
             ) in self._collect_metrics_per_channel(channel):
                 end = whisper_data.end
                 duration_seconds: float = audio_metrics[
-                    "duration seconds"
+                    "duration"
                 ].value  # pyright: ignore
                 percent_done: int = round((end / duration_seconds) * 100)
 

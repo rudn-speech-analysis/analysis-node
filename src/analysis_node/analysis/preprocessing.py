@@ -86,39 +86,46 @@ def get_audio_metrics(audio_file: pathlib.Path | str) -> MetricCollection:
         "pydub",
         [
             Metric(
-                "duration seconds",
+                "duration",
                 MetricType.FLOAT,
                 duration_seconds,
+                "seconds"
             ),
             Metric(
                 "sample rate",
                 MetricType.INT,
                 sample_rate,
+                "Hz"
             ),
             Metric(
                 "channels",
                 MetricType.INT,
                 channels,
+                None,
             ),
             Metric(
                 "bit depth",
                 MetricType.INT,
                 bit_depth,
+                "bits/sample"
             ),
             Metric(
-                "max dbfs",
+                "max loudness",
                 MetricType.FLOAT,
                 max_dbfs,
+                "dBFS"
             ),
             Metric(
                 "rms",
                 MetricType.INT,
                 rms,
+                None,
             ),
             Metric(
                 "raw data length",
                 MetricType.INT,
                 raw_data_length,
+                "samples"
             ),
         ],
     )

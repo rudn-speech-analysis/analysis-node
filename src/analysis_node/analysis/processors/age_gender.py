@@ -135,9 +135,10 @@ class AgeGenderProcessor(AggregateProcessor):
                     k,
                     MetricType.INT,
                     v * 100,
+                    "years"
                 )
                 if k == "age"
-                else Metric(k, MetricType.FLOAT, v)
+                else Metric(k, MetricType.FLOAT, v, None)
             )
             for (k, v) in zip(["age", "female", "male", "child"], vals[0])
         ]

@@ -75,7 +75,7 @@ class CatEmotionProcessor(Processor):
         sample_rate, waveform = wavfile.read(segment_file)
         vals = self(waveform, sample_rate)
         metrics = [
-            Metric(k, MetricType.FLOAT, v)
+            Metric(k, MetricType.FLOAT, v, None)
             for k, v in zip(["neutral", "angry", "positive", "sad", "other"], vals[0])
         ]
         return MetricCollection(self._model_name, metrics)

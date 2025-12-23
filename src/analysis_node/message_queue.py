@@ -12,6 +12,8 @@ from analysis_node.messages import (
     KafkaAnalysisRequest,
     KafkaAnalysisResponse,
     AnalysisRequest,
+    KafkaMsgOption,
+    ProgressMsg,
 )
 from analysis_node.utils import Generator, NpEncoder
 from analysis_node.analysis import MetricsGenerator
@@ -86,14 +88,16 @@ def loop_kafka(
     producer: KafkaSingleTopicProducer,
     processor: Callable[[AnalysisRequest], MetricsGenerator],
 ):
-    def send(id, data):
+    def send(id: str, data: KafkaMsgOption):
         producer.send(KafkaAnalysisResponse(id, data))
         producer.flush()
 
     for message in consumer:
+        print(message.value)
         request = message.value
         id = request.id
         logger.info(f"Processing request with id: {id}")
+        send(id, ProgressMsg(0))
 
         p = Generator(processor(request.data))
         try:
