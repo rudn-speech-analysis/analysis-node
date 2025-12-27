@@ -1,3 +1,4 @@
+from analysis_node.analysis.processors.processor import Processor, AggregateProcessor
 from analysis_node.analysis.processors.age_gender import AgeGenderProcessor
 from analysis_node.analysis.processors.vad_emotion import VadEmotionProcessor
 from analysis_node.analysis.processors.cat_emotion import CatEmotionProcessor

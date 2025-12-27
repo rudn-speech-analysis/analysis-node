@@ -4,7 +4,7 @@ import dacite
 import pathlib
 import logging
 
-from analysis_node.analysis.processors.processor import AggregateProcessor, Processor
+from analysis_node.analysis.processors import AggregateProcessor, Processor
 from analysis_node.config import Config
 from analysis_node.utils import fetch_to_tmp_file, list_dict_to_dict_list
 from analysis_node.messages import (
@@ -57,9 +57,11 @@ class AnalysisPipeline:
 
     def _collect_metrics_per_segment(
         self,
-        segment_file,
+        segment_file: pathlib.Path | str,
     ) -> Tuple[dict[str, MetricCollection], dict[str, MetricCollection]]:
-        def process(processors: dict[str, Processor]) -> dict[str, MetricCollection]:
+        def process(
+            processors: dict[str, Processor] | dict[str, AggregateProcessor],
+        ) -> dict[str, MetricCollection]:
             return {
                 proc_name: processor.process(segment_file)
                 for proc_name, processor in processors.items()
@@ -67,7 +69,7 @@ class AnalysisPipeline:
 
         return (
             process(self.per_segment_processors),
-            process(self.per_channel_processors),  # pyright: ignore
+            process(self.per_channel_processors),
         )
 
     def _collect_metrics_per_channel(
@@ -112,15 +114,17 @@ class AnalysisPipeline:
         )
         aggregated_channel_metrics.append(
             MetricCollection(
-                provider='whisper',
-                description='Aggregate metrics from Whisper',
-                metrics=[Metric(
-                    name='talk percent',
-                    type=MetricType.FLOAT,
-                    value=talk_percent,
-                    unit='%',
-                    description='Fraction of time that this channel was talking'
-                )]
+                provider="whisper",
+                description="Aggregate metrics from Whisper",
+                metrics=[
+                    Metric(
+                        name="talk percent",
+                        type=MetricType.FLOAT,
+                        value=talk_percent,
+                        unit="%",
+                        description="Fraction of time that this channel was talking",
+                    )
+                ],
             )
         )
 
