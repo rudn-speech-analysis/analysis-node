@@ -78,7 +78,9 @@ class ChannelMetrics(BaseMsg):
 
 @dataclass
 class ProgressMsg(BaseMsg):
-    percent_done: int
+    percent_done: int | None
+    channel: int | None
+    description: str | None
 
     def __post_init__(self):
         super().__post_init__()
@@ -99,6 +101,4 @@ class ErrorMsg(BaseMsg):
 
 KafkaMsgOption = RecordingMetrics | ChannelMetrics | ProgressMsg | ErrorMsg
 
-KafkaAnalysisResponse = KafkaEnvelope[
-    KafkaMsgOption
-]
+KafkaAnalysisResponse = KafkaEnvelope[KafkaMsgOption]

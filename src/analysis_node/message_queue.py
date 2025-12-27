@@ -97,7 +97,6 @@ def loop_kafka(
         request = message.value
         id = request.id
         logger.info(f"Processing request with id: {id}")
-        send(id, ProgressMsg(0))
 
         p = Generator(processor(request.data))
         try:

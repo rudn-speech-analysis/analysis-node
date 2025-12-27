@@ -136,20 +136,27 @@ class AnalysisPipeline:
 
     def __call__(self, request: AnalysisRequest) -> MetricsGenerator:
         cfg = self.config.values["reporting"]
+
+        yield ProgressMsg(None, None, "Loading audio.")
+
         source_audio_file = fetch_to_tmp_file(request.download_url)
         audio_metrics = get_audio_metrics(source_audio_file)
+
+        yield ProgressMsg(None, None, "Splitting audio.")
+
         channel_files = split_audio(source_audio_file)
 
         metrics = []
         for channel in channel_files:
-            logger.info(f"Begin processing channel {len(metrics)}")
+            channel_idx = len(metrics)
+            last_progress = 0
+
+            logger.info(f"Begin processing channel {channel_idx}")
+            yield ProgressMsg(last_progress, channel_idx, "Begin processing channel.")
 
             segment_metrics_log = list()
             channel_metrics_log = list()
             whisper_data_log = list()
-
-            last_progress = 0
-            yield ProgressMsg(last_progress)
 
             for (
                 segment_metrics,
@@ -165,15 +172,18 @@ class AnalysisPipeline:
                 if percent_done > last_progress + cfg["progress_delta"]:
                     last_progress = percent_done
                     logger.info(
-                        f"Processing channel {len(metrics)}: {round(percent_done)}%"
+                        f"Processing channel {channel_idx}: {round(percent_done)}%"
                     )
-                    yield ProgressMsg(percent_done)
+                    yield ProgressMsg(percent_done, channel_idx, None)
 
                 segment_metrics_log.append(segment_metrics)
                 channel_metrics_log.append(channel_metrics)
                 whisper_data_log.append(whisper_data)
 
             logger.info(f"Preparing channel metrics report for channel {len(metrics)}")
+            yield ProgressMsg(
+                percent_done, channel_idx, "Preparing channel metrics report."
+            )
             cm = self._prepare_channel_metrics_report(
                 len(metrics),
                 segment_metrics_log,
