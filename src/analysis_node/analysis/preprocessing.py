@@ -1,3 +1,4 @@
+import logging
 from typing import Generator, Tuple
 import pydub
 import tempfile
@@ -5,8 +6,9 @@ import pathlib
 from analysis_node.config import Config
 from analysis_node.messages import Metric, MetricType, MetricCollection
 
+logger = logging.getLogger(__name__)
 
-def split_audio(input_file) -> Tuple[pathlib.Path, pathlib.Path]:
+def split_audio(input_file) -> list[tempfile._TemporaryFileWrapper]:
     audio = pydub.AudioSegment.from_file(input_file)
 
     try:
@@ -14,13 +16,13 @@ def split_audio(input_file) -> Tuple[pathlib.Path, pathlib.Path]:
     except ValueError as ex:
         raise ValueError("Input audio file must be stereo.") from ex
 
-    def export(channel) -> pathlib.Path:
-        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_file:
-            channel.export(tmp_file, format="wav")
-        return pathlib.Path(tmp_file.name)
+    def export(channel) -> tempfile._TemporaryFileWrapper:
+        tmp_file = tempfile.NamedTemporaryFile(suffix=".wav")
+        channel.export(tmp_file, format="wav")
+        return tmp_file
 
-    left, right = list(map(export, split))
-    return left, right
+    channels = list(map(export, split))
+    return channels
 
 
 def filter_out(segment_data: dict, config: Config) -> bool:
@@ -56,12 +58,14 @@ def segmentize(
         language="ru",
     )
     audio = pydub.AudioSegment.from_file(source)
+    logger.info("segmentizing", source, "with", len(transcription["segments"]), "segments")
     for segment_data in transcription["segments"]:
         if filter_out(segment_data, config):
             continue
         start = float(segment_data["start"]) * 1000
         end = float(segment_data["end"]) * 1000
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_file:
+            logger.debug("writing segment", start, end, "to", tmp_file.name)
             audio[start:end].export(tmp_file.name, format="wav")
             yield (segment_data, pathlib.Path(tmp_file.name))
 

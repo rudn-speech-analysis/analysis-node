@@ -38,6 +38,7 @@ SCHEMA = {
         "models": {
             "type": "object",
             "properties": {
+                "hf_token": {"type": "string",},
                 "whisper": {
                     "type": "object",
                     "properties": {
@@ -73,6 +74,7 @@ SCHEMA = {
                 # "emotion2vec",
                 # "wav2vec2_emotion",
                 "wav2vec2_age_gender",
+                "hf_token",
             ],
         },
         "preprocessing": {

@@ -29,6 +29,9 @@ from analysis_node.analysis.preprocessing import (
 )
 from analysis_node.analysis.postprocessing import get_talk_percent, WhisperMetrics
 
+from analysis_node.analysis.diarization import Diarizer
+from huggingface_hub import login
+
 logger = logging.getLogger(__name__)
 
 
@@ -38,6 +41,10 @@ MetricsGenerator = Generator[ChannelMetrics | ProgressMsg, None, RecordingMetric
 class AnalysisPipeline:
     def __init__(self, device, config: Config):
         cfg = config.values["models"]
+
+        login(cfg['hf_token'])
+
+        self.diarizer = Diarizer(device)
 
         self.whisper = whisper.load_model(cfg["whisper"]["model"]).to(device)
 
@@ -62,10 +69,16 @@ class AnalysisPipeline:
         def process(
             processors: dict[str, Processor] | dict[str, AggregateProcessor],
         ) -> dict[str, MetricCollection]:
-            return {
-                proc_name: processor.process(segment_file)
-                for proc_name, processor in processors.items()
-            }
+            data = {}
+            for proc_name, processor in processors.items():
+                try:
+                    logger.debug("processing segment %s with %s", segment_file, proc_name)
+                    data[proc_name] = processor.process(segment_file)
+                except Exception as e:
+                    logger.error("Error while processing %s on segment %s: %s", proc_name, segment_file, e)
+                    continue
+            return data
+                
 
         return (
             process(self.per_segment_processors),
@@ -144,55 +157,65 @@ class AnalysisPipeline:
 
         yield ProgressMsg(None, None, "Splitting audio.")
 
-        channel_files = split_audio(source_audio_file)
+        # channel_files = list(split_audio(source_audio_file))
+        channel_files = self.diarizer.process(source_audio_file)
 
         metrics = []
-        for channel in channel_files:
-            channel_idx = len(metrics)
-            last_progress = 0
+        for channel_file in channel_files:
+            with channel_file:
+                channel = pathlib.Path(channel_file.name)
+                channel_idx = len(metrics)
+                last_progress = 0
 
-            logger.info(f"Begin processing channel {channel_idx}")
-            yield ProgressMsg(last_progress, channel_idx, "Begin processing channel.")
+                logger.info(f"Begin processing channel {channel_idx} from file {channel.name}")
+                yield ProgressMsg(last_progress, channel_idx, "Begin processing channel.")
 
-            segment_metrics_log = list()
-            channel_metrics_log = list()
-            whisper_data_log = list()
+                segment_metrics_log = list()
+                channel_metrics_log = list()
+                whisper_data_log = list()
 
-            for (
-                segment_metrics,
-                channel_metrics,
-                whisper_data,
-            ) in self._collect_metrics_per_channel(channel):
-                end = whisper_data.end
-                duration_seconds: float = audio_metrics[
-                    "duration"
-                ].value  # pyright: ignore
-                percent_done: int = round((end / duration_seconds) * 100)
+                percent_done = 0
+                duration_seconds = 0
+                for (
+                    segment_metrics,
+                    channel_metrics,
+                    whisper_data,
+                ) in self._collect_metrics_per_channel(channel):
+                    end = whisper_data.end
+                    duration_seconds: float = audio_metrics[
+                        "duration"
+                    ].value  # pyright: ignore
+                    percent_done: int = round((end / duration_seconds) * 100)
 
-                if percent_done > last_progress + cfg["progress_delta"]:
-                    last_progress = percent_done
-                    logger.info(
-                        f"Processing channel {channel_idx}: {round(percent_done)}%"
-                    )
-                    yield ProgressMsg(percent_done, channel_idx, None)
+                    if percent_done > last_progress + cfg["progress_delta"]:
+                        last_progress = percent_done
+                        logger.info(
+                            f"Processing channel {channel_idx}: {round(percent_done)}%"
+                        )
+                        yield ProgressMsg(percent_done, channel_idx, None)
 
-                segment_metrics_log.append(segment_metrics)
-                channel_metrics_log.append(channel_metrics)
-                whisper_data_log.append(whisper_data)
+                    segment_metrics_log.append(segment_metrics)
+                    channel_metrics_log.append(channel_metrics)
+                    whisper_data_log.append(whisper_data)
 
-            logger.info(f"Preparing channel metrics report for channel {len(metrics)}")
-            yield ProgressMsg(
-                percent_done, channel_idx, "Preparing channel metrics report."
-            )
-            cm = self._prepare_channel_metrics_report(
-                len(metrics),
-                segment_metrics_log,
-                channel_metrics_log,
-                whisper_data_log,
-                duration_seconds,
-            )
-            metrics.append(cm)
+                logger.info(f"Preparing channel metrics report for channel {len(metrics)}")
+                yield ProgressMsg(
+                    percent_done, channel_idx, "Preparing channel metrics report."
+                )
+                cm = self._prepare_channel_metrics_report(
+                    len(metrics),
+                    segment_metrics_log,
+                    channel_metrics_log,
+                    whisper_data_log,
+                    duration_seconds,
+                )
+                metrics.append(cm)
 
-            yield cm
+                logger.debug("about to send:", cm)
+                logger.debug(f"{channel_metrics_log=}")
+                logger.debug(f"{segment_metrics_log=}")
+                logger.debug(f"{whisper_data_log=}")
+
+                yield cm
 
         return RecordingMetrics([audio_metrics])

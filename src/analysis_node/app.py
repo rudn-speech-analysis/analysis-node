@@ -25,8 +25,8 @@ def main():
     config = prepare_config(args.config)
     logging.config.dictConfig(config.values["logging"])
 
-    kafka_consumer, kafka_producer = prepare_kafka(config)
     analysis_pipeline = AnalysisPipeline(args.device, config)
+    kafka_consumer, kafka_producer = prepare_kafka(config)
 
     loop_kafka(kafka_consumer, kafka_producer, analysis_pipeline)
 
