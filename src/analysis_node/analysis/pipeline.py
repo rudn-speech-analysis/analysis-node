@@ -42,7 +42,7 @@ class AnalysisPipeline:
     def __init__(self, device, config: Config):
         cfg = config.values["models"]
 
-        login(cfg['hf_token'])
+        login(cfg["hf_token"])
 
         self.diarizer = Diarizer(device)
 
@@ -72,13 +72,19 @@ class AnalysisPipeline:
             data = {}
             for proc_name, processor in processors.items():
                 try:
-                    logger.debug("processing segment %s with %s", segment_file, proc_name)
+                    logger.debug(
+                        "processing segment %s with %s", segment_file, proc_name
+                    )
                     data[proc_name] = processor.process(segment_file)
                 except Exception as e:
-                    logger.error("Error while processing %s on segment %s: %s", proc_name, segment_file, e)
+                    logger.error(
+                        "Error while processing %s on segment %s: %s",
+                        proc_name,
+                        segment_file,
+                        e,
+                    )
                     continue
             return data
-                
 
         return (
             process(self.per_segment_processors),
@@ -97,11 +103,7 @@ class AnalysisPipeline:
             channel_file, self.whisper, self.config
         ):
             per_segment, per_channel = self._collect_metrics_per_segment(segment_path)
-            whisper_data = dacite.from_dict(
-                data_class=WhisperMetrics,
-                data=segment_data,
-            )
-            yield per_segment, per_channel, whisper_data
+            yield per_segment, per_channel, segment_data
 
     def _prepare_channel_metrics_report(
         self,
@@ -150,12 +152,12 @@ class AnalysisPipeline:
     def __call__(self, request: AnalysisRequest) -> MetricsGenerator:
         cfg = self.config.values["reporting"]
 
-        yield ProgressMsg(None, None, "Loading audio.")
+        yield ProgressMsg(0, None, "Loading audio.")
 
         source_audio_file = fetch_to_tmp_file(request.download_url)
         audio_metrics = get_audio_metrics(source_audio_file)
 
-        yield ProgressMsg(None, None, "Splitting audio.")
+        yield ProgressMsg(0, None, "Splitting audio.")
 
         # channel_files = list(split_audio(source_audio_file))
         channel_files = self.diarizer.process(source_audio_file)
@@ -167,25 +169,28 @@ class AnalysisPipeline:
                 channel_idx = len(metrics)
                 last_progress = 0
 
-                logger.info(f"Begin processing channel {channel_idx} from file {channel.name}")
-                yield ProgressMsg(last_progress, channel_idx, "Begin processing channel.")
+                logger.info(
+                    f"Begin processing channel {channel_idx} from file {channel.name}"
+                )
+                yield ProgressMsg(
+                    last_progress, channel_idx, "Begin processing channel."
+                )
 
                 segment_metrics_log = list()
                 channel_metrics_log = list()
                 whisper_data_log = list()
 
                 percent_done = 0
-                duration_seconds = 0
+                duration_seconds: float = audio_metrics[
+                    "duration"
+                ].value  # pyright: ignore
                 for (
                     segment_metrics,
                     channel_metrics,
                     whisper_data,
                 ) in self._collect_metrics_per_channel(channel):
                     end = whisper_data.end
-                    duration_seconds: float = audio_metrics[
-                        "duration"
-                    ].value  # pyright: ignore
-                    percent_done: int = round((end / duration_seconds) * 100)
+                    percent_done = round((end / duration_seconds) * 100)
 
                     if percent_done > last_progress + cfg["progress_delta"]:
                         last_progress = percent_done
@@ -198,7 +203,9 @@ class AnalysisPipeline:
                     channel_metrics_log.append(channel_metrics)
                     whisper_data_log.append(whisper_data)
 
-                logger.info(f"Preparing channel metrics report for channel {len(metrics)}")
+                logger.info(
+                    f"Preparing channel metrics report for channel {len(metrics)}"
+                )
                 yield ProgressMsg(
                     percent_done, channel_idx, "Preparing channel metrics report."
                 )

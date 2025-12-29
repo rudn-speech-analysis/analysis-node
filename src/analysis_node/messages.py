@@ -34,6 +34,13 @@ class Metric:
     unit: str | None = "¤"
     description: str | None = None
 
+    def __post_init__(self):
+        if isinstance(__builtins__, dict):
+            f = __builtins__[self.type.value]
+        else:
+            f = getattr(__builtins__, self.type.value)
+        self.value = f(self.value)
+
 
 @dataclass
 class MetricCollection:
