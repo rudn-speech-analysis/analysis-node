@@ -177,7 +177,7 @@ class AnalysisPipeline:
                 last_progress = 0
 
                 logger.info(
-                    f"Begin processing channel {channel_idx} from file {channel.name}"
+                    f"Begin processing channel {channel_idx} from file {channel}"
                 )
                 yield ProgressMsg(
                     last_progress, channel_idx, "Begin processing channel."
