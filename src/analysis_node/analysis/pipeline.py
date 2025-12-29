@@ -1,10 +1,11 @@
 from typing import Generator, Tuple
 import whisper
-import dacite
+import traceback
 import pathlib
 import logging
 
 from analysis_node.analysis.processors import AggregateProcessor, Processor
+from analysis_node.analysis.processors.prosodic_metrics import ProsodicProcessor
 from analysis_node.config import Config
 from analysis_node.utils import fetch_to_tmp_file, list_dict_to_dict_list
 from analysis_node.messages import (
@@ -42,7 +43,10 @@ class AnalysisPipeline:
     def __init__(self, device, config: Config):
         cfg = config.values["models"]
 
-        login(cfg["hf_token"])
+        if "hf_token" in cfg and cfg["hf_token"]:
+            login(cfg["hf_token"])
+        else:
+            login()
 
         self.diarizer = Diarizer(device)
 
@@ -51,6 +55,7 @@ class AnalysisPipeline:
         self.per_segment_processors: dict[str, Processor] = {
             "vad_emotion": VadEmotionProcessor(device),
             "cat_emotion": CatEmotionProcessor(device),
+            "prosodic": ProsodicProcessor(),
         }
         self.per_channel_processors: dict[str, AggregateProcessor] = {
             "age_gender": AgeGenderProcessor(
@@ -72,17 +77,13 @@ class AnalysisPipeline:
             data = {}
             for proc_name, processor in processors.items():
                 try:
-                    logger.debug(
-                        "processing segment %s with %s", segment_file, proc_name
-                    )
+                    logger.debug(f"processing segment {segment_file} with {proc_name}")
                     data[proc_name] = processor.process(segment_file)
                 except Exception as e:
                     logger.error(
-                        "Error while processing %s on segment %s: %s",
-                        proc_name,
-                        segment_file,
-                        e,
+                        f"Error while processing {proc_name} on segment {segment_file}: {e}"
                     )
+                    traceback.print_exc()
                     continue
             return data
 
@@ -217,11 +218,6 @@ class AnalysisPipeline:
                     duration_seconds,
                 )
                 metrics.append(cm)
-
-                logger.debug("about to send:", cm)
-                logger.debug(f"{channel_metrics_log=}")
-                logger.debug(f"{segment_metrics_log=}")
-                logger.debug(f"{whisper_data_log=}")
 
                 yield cm
 

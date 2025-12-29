@@ -2,4 +2,4 @@ from analysis_node.analysis.processors.processor import Processor, AggregateProc
 from analysis_node.analysis.processors.age_gender import AgeGenderProcessor
 from analysis_node.analysis.processors.vad_emotion import VadEmotionProcessor
 from analysis_node.analysis.processors.cat_emotion import CatEmotionProcessor
-from analysis_node.analysis.processors.audio_metrics import AudioMetricsProcessor
+from analysis_node.analysis.processors.prosodic_metrics import ProsodicProcessor

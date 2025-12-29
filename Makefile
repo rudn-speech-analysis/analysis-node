@@ -5,7 +5,7 @@ install:
 	pip install -e .
 
 run: install
-	python -m analysis_node.app --config ./config.yaml --device cpu
+	python -m analysis_node.app --config ./config.yaml --device cuda:0
 
 update:
 	conda env update -f environment.yaml --prune

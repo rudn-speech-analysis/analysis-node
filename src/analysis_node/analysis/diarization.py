@@ -33,6 +33,7 @@ torch.serialization.add_safe_globals(
 
 logger = logging.getLogger(__name__)
 
+
 class Diarizer:
     def __init__(self, device: str):
         self.pipeline = Pipeline.from_pretrained(
@@ -56,12 +57,12 @@ class Diarizer:
         waveform = torch.from_numpy(audio_np).float()
         data = {"waveform": waveform, "sample_rate": sample_rate}
         return data
-    
+
     def get_turns(self, data):
         with ProgressHook() as hook:
             output = self.pipeline(data, hook=hook)
         return output
-    
+
     def get_waveforms(self, data, turns):
         waveform = data["waveform"]
         sample_rate = data["sample_rate"]
@@ -70,7 +71,7 @@ class Diarizer:
         speaker_segments = defaultdict(list)
         for segment, speaker in turns.speaker_diarization:
             speaker_segments[speaker].append(segment)
-        logger.debug('Total speaker list:', list(speaker_segments.keys()))
+        logger.debug(f"Total speaker list: {list(speaker_segments.keys())}")
         waveform = waveform.T
         total_samples = waveform.shape[0]
 
@@ -78,10 +79,10 @@ class Diarizer:
         for speaker, segments in speaker_segments.items():
             # Silent audio array matching the original
             speaker_audio = np.zeros_like(waveform)
-            
+
             # Sort segments by start time
             segments = sorted(segments, key=lambda seg: seg.start)
-            
+
             for seg in segments:
                 # Calculate sample indices (inclusive start, exclusive end)
                 start_sample = int(seg.start * sample_rate)
@@ -91,18 +92,20 @@ class Diarizer:
                 start_sample = max(0, start_sample)
                 end_sample = min(total_samples, end_sample)
 
-                speaker_audio[start_sample:end_sample] = waveform[start_sample:end_sample]
-            
+                speaker_audio[start_sample:end_sample] = waveform[
+                    start_sample:end_sample
+                ]
+
             # combine all channels into one, if needed
             # waveform has shape (n_channels, n_samples)
             speaker_audio = np.sum(speaker_audio, axis=1)
             yield (speaker, speaker_audio, sample_rate)
-    
+
     def process(self, segment_file: pathlib.Path | str):
         data = self.load_file(segment_file)
         turns = self.get_turns(data)
         for speaker, waveform, sample_rate in self.get_waveforms(data, turns):
             file = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
             wavfile.write(file, sample_rate, waveform)
-            logger.info(speaker, 'written to', file.name)
+            logger.info(f"{speaker} written to {file.name}")
             yield file

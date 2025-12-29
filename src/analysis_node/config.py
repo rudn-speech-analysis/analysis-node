@@ -38,7 +38,9 @@ SCHEMA = {
         "models": {
             "type": "object",
             "properties": {
-                "hf_token": {"type": "string",},
+                "hf_token": {
+                    "type": "string",
+                },
                 "whisper": {
                     "type": "object",
                     "properties": {
@@ -74,7 +76,6 @@ SCHEMA = {
                 # "emotion2vec",
                 # "wav2vec2_emotion",
                 "wav2vec2_age_gender",
-                "hf_token",
             ],
         },
         "preprocessing": {
@@ -163,7 +164,10 @@ def validate_config(config, schema):
         raise ValueError(f"Config  validation failed: {e.message}")
 
 
-def prepare_config(path: pathlib.Path | str) -> Config:
-    config = load_yaml_config(path)
+def prepare_config(path: pathlib.Path | str | dict) -> Config:
+    if isinstance(path, dict):
+        config = path
+    else:
+        config = load_yaml_config(path)
     jsonschema.validate(instance=config, schema=SCHEMA)
     return Config(values=config)

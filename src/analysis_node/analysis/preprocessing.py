@@ -175,15 +175,13 @@ def segmentize(
         merged_segments = merge_close_segments(segments, min_segment_distance_sec)
 
     audio = pydub.AudioSegment.from_file(source)
-    logger.info(
-        "segmentizing", source, "with", len(transcription["segments"]), "segments"
-    )
+    logger.info(f"Segmentizing {source} with {len(transcription["segments"])} segments")
     for segment_data in merged_segments:
 
         start = float(segment_data.start) * 1000
         end = float(segment_data.end) * 1000
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_file:
-            logger.debug("writing segment", start, end, "to", tmp_file.name)
+            logger.debug(f"Writing segment [{start}, {end}] to {tmp_file.name}")
             audio[start:end].export(tmp_file.name, format="wav")
             yield (segment_data, pathlib.Path(tmp_file.name))
 

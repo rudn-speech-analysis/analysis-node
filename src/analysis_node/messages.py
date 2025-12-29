@@ -14,6 +14,8 @@ class KafkaEnvelope(Generic[T]):
 @dataclass
 class AnalysisRequest:
     download_url: str
+    transcrip_url: str | None
+    force_diarize: bool
 
 
 KafkaAnalysisRequest = KafkaEnvelope[AnalysisRequest]
