@@ -38,9 +38,8 @@ SCHEMA = {
         "models": {
             "type": "object",
             "properties": {
-                "hf_token": {
-                    "type": "string",
-                },
+                "hf_token": {"type": "string"},
+                "device": {"type": "string"},
                 "whisper": {
                     "type": "object",
                     "properties": {
@@ -72,6 +71,7 @@ SCHEMA = {
                 },
             },
             "required": [
+                "device",
                 "whisper",
                 # "emotion2vec",
                 # "wav2vec2_emotion",

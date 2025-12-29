@@ -40,8 +40,9 @@ MetricsGenerator = Generator[ChannelMetrics | ProgressMsg, None, RecordingMetric
 
 
 class AnalysisPipeline:
-    def __init__(self, device, config: Config):
+    def __init__(self, config: Config):
         cfg = config.values["models"]
+        device = cfg["device"]
 
         if "hf_token" in cfg and cfg["hf_token"]:
             login(cfg["hf_token"])

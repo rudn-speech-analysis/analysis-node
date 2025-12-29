@@ -14,18 +14,12 @@ def main():
         help="Path to the config file.",
         required=True,
     )
-    parser.add_argument(
-        "--device",
-        "-d",
-        help="Pytorch device for the models to use.",
-        required=True,
-    )
 
     args = parser.parse_args()
     config = prepare_config(args.config)
     logging.config.dictConfig(config.values["logging"])
 
-    analysis_pipeline = AnalysisPipeline(args.device, config)
+    analysis_pipeline = AnalysisPipeline(config)
     kafka_consumer, kafka_producer = prepare_kafka(config)
 
     loop_kafka(kafka_consumer, kafka_producer, analysis_pipeline)
