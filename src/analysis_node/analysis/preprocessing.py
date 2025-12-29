@@ -2,6 +2,9 @@ import logging
 from functools import partial
 from typing import Generator, Tuple
 import pydub
+import librosa
+import soundfile as sf
+import numpy as np
 import tempfile
 import pathlib
 import dacite
@@ -38,20 +41,13 @@ class WhisperMetrics:
 logger = logging.getLogger(__name__)
 
 
-def split_audio(input_file) -> list[tempfile._TemporaryFileWrapper]:
-    audio = pydub.AudioSegment.from_file(input_file)
-
-    try:
-        split = audio.split_to_mono()
-    except ValueError as ex:
-        raise ValueError("Input audio file must be stereo.") from ex
-
+def split_audio(y: np.ndarray, sr: int | float) -> list[tempfile._TemporaryFileWrapper]:
     def export(channel) -> tempfile._TemporaryFileWrapper:
         tmp_file = tempfile.NamedTemporaryFile(suffix=".wav")
-        channel.export(tmp_file, format="wav")
+        sf.write(tmp_file.name, channel, sr, subtype="PCM_16")
         return tmp_file
 
-    channels = list(map(export, split))
+    channels = list(map(export, y))
     return channels
 
 
@@ -174,15 +170,27 @@ def segmentize(
     else:
         merged_segments = merge_close_segments(segments, min_segment_distance_sec)
 
-    audio = pydub.AudioSegment.from_file(source)
+    y, sr = librosa.load(source, sr=None, mono=False)
     logger.info(f"Segmentizing {source} with {len(transcription["segments"])} segments")
     for segment_data in merged_segments:
 
-        start = float(segment_data.start) * 1000
-        end = float(segment_data.end) * 1000
+        start = float(segment_data.start)
+        end = float(segment_data.end)
+        start_sample = int(start * sr)
+        end_sample = int(end * sr)
+
+        segment_audio = (
+            y[:, start_sample:end_sample] if y.ndim == 2 else y[start_sample:end_sample]
+        )
+
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_file:
             logger.debug(f"Writing segment [{start}, {end}] to {tmp_file.name}")
-            audio[start:end].export(tmp_file.name, format="wav")
+            sf.write(
+                tmp_file.name,
+                segment_audio.T if y.ndim == 2 else segment_audio,
+                sr,
+                subtype="PCM_16",
+            )
             yield (segment_data, pathlib.Path(tmp_file.name))
 
 

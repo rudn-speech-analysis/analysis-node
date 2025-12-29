@@ -1,11 +1,10 @@
 import pathlib
 import numpy as np
 import torch
-from scipy.io import wavfile
+import librosa
 import logging
 
 from analysis_node.analysis.processors.processor import Processor
-from analysis_node.analysis.processors.utils import resample_to
 from analysis_node.messages import MetricType, Metric, MetricCollection
 
 from transformers import HubertForSequenceClassification, Wav2Vec2FeatureExtractor
@@ -40,7 +39,6 @@ class CatEmotionProcessor(Processor):
     def __call__(
         self,
         audio: np.ndarray,
-        sampling_rate: int,
     ) -> np.ndarray:
         """
         Analyze raw audio for specific emotion (neutral, angry, positive, sad, other).
@@ -48,19 +46,13 @@ class CatEmotionProcessor(Processor):
         Parameters
         ----------
         audio : np.ndarray
-            Raw waveform (1D or 2D with batch).
-        sampling_rate : int
-            Sampling rate of the input audio.
+            Raw waveform (1D or 2D).
 
         Returns
         -------
         np.ndarray
             Predictions.
         """
-        if sampling_rate != self.REQUIRED_SAMPLING_RATE:
-            audio = resample_to(audio, sampling_rate, self.REQUIRED_SAMPLING_RATE)
-            sampling_rate = self.REQUIRED_SAMPLING_RATE
-
         audio = np.expand_dims(audio, axis=0)
 
         inputs = self.feature_extractor(
@@ -72,8 +64,8 @@ class CatEmotionProcessor(Processor):
         return self.model(inputs["input_values"]).logits.cpu().numpy()
 
     def process(self, segment_file: pathlib.Path | str) -> MetricCollection:
-        sample_rate, waveform = wavfile.read(segment_file)
-        vals = self(waveform, sample_rate)
+        y, _ = librosa.load(segment_file, sr=self.REQUIRED_SAMPLING_RATE, mono=False)
+        vals = self(y)
         metrics = [
             Metric(k, MetricType.FLOAT, v, None)
             for k, v in zip(["neutral", "angry", "positive", "sad", "other"], vals[0])

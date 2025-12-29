@@ -27,12 +27,3 @@ class ModelHead(nn.Module):
         x = self.out_proj(x)
 
         return x
-
-
-def resample_to(
-    audio: np.ndarray, sample_rate: int, new_sample_rate: int
-) -> np.ndarray:
-
-    num_samples = int(len(audio) * new_sample_rate / sample_rate)
-    resampled_audio = resample(audio, num_samples)
-    return np.array(resampled_audio)

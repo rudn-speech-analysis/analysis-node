@@ -1,6 +1,6 @@
 import pathlib
 import numpy as np
-from scipy.io import wavfile
+import librosa
 from scipy.signal import correlate, find_peaks, stft, medfilt
 from typing import Callable
 
@@ -34,17 +34,21 @@ class ProsodicProcessor(Processor):
         return MetricCollection(self._model_name, metrics, "Prosodic metrics.")
 
 
-# Helper function to load audio (shared across extractors)
-def _load_audio(file_path: pathlib.Path | str) -> tuple[int, np.ndarray]:
-    fs, signal = wavfile.read(str(file_path))
-    if signal.ndim > 1:
-        signal = signal[:, 0]  # Take first channel if stereo (though input is mono)
-    signal = (
-        signal.astype(np.float64) / np.max(np.abs(signal))
-        if np.max(np.abs(signal)) != 0
-        else signal
-    )  # Normalize
-    return fs, signal
+def _load_audio(file_path: pathlib.Path | str) -> tuple[np.ndarray, int]:
+    """
+    Load audio file using librosa.
+    Returns sample rate (int) and normalized signal (np.float64 array, mono, [-1,1] range).
+    """
+    y, fs = librosa.load(str(file_path), sr=None, mono=False, dtype=np.float64)
+
+    if y.ndim > 1:
+        y = y[0]
+
+    # Edge case for all-zero signals
+    if np.max(np.abs(y)) == 0:
+        y = np.zeros_like(y)
+
+    return y, int(fs)
 
 
 # Helper to frame signal (shared)
@@ -67,7 +71,7 @@ def extract_f0(file_path: pathlib.Path | str) -> dict[str, Metric]:
     Returns mean and std of F0 in Hz.
     Uses autocorrelation for pitch detection.
     """
-    fs, signal = _load_audio(file_path)
+    signal, fs = _load_audio(file_path)
     frames = _frame_signal(signal, fs)
     f0_values = []
     for frame in frames:
@@ -144,7 +148,7 @@ def extract_formant_f1(file_path: pathlib.Path | str) -> dict[str, Metric]:
     Extracts first formant frequency (F1).
     Returns mean and std in Hz (focus on voiced frames via energy threshold).
     """
-    fs, signal = _load_audio(file_path)
+    signal, fs = _load_audio(file_path)
     frames = _frame_signal(
         signal, fs, frame_length=0.025, hop_length=0.01
     )  # Shorter for formants
@@ -180,7 +184,7 @@ def extract_formant_f2(file_path: pathlib.Path | str) -> dict[str, Metric]:
     Extracts second formant frequency (F2).
     Returns mean and std in Hz (focus on voiced frames via energy threshold).
     """
-    fs, signal = _load_audio(file_path)
+    signal, fs = _load_audio(file_path)
     frames = _frame_signal(
         signal, fs, frame_length=0.025, hop_length=0.01
     )  # Shorter for formants
@@ -216,7 +220,7 @@ def extract_intensity(file_path: pathlib.Path | str) -> dict[str, Metric]:
     Extracts intensity (loudness) features via RMS energy.
     Returns mean and std of intensity in dB (relative).
     """
-    fs, signal = _load_audio(file_path)
+    signal, fs = _load_audio(file_path)
     frames = _frame_signal(signal, fs)
     rms_values = []
     for frame in frames:
@@ -254,7 +258,7 @@ def extract_zero_crossing_rate(file_path: pathlib.Path | str) -> dict[str, Metri
     Extracts zero-crossing rate (ZCR), indicating noisiness or high-frequency content.
     Returns mean and std of ZCR (crossings per second).
     """
-    fs, signal = _load_audio(file_path)
+    signal, fs = _load_audio(file_path)
     frames = _frame_signal(signal, fs)
     zcr_values = []
     for frame in frames:
@@ -288,7 +292,7 @@ def extract_pauses(file_path: pathlib.Path | str) -> dict[str, Metric]:
     Detects low-energy segments as pauses (threshold: 0.01 * global RMS, min_pause: 0.1s).
     Returns number of pauses, total pause duration (s), and mean pause duration (s).
     """
-    fs, signal = _load_audio(file_path)
+    signal, fs = _load_audio(file_path)
     global_rms = np.sqrt(np.mean(signal**2))
     frame_length = 0.03
     hop_length = 0.01
@@ -342,7 +346,7 @@ def extract_speaking_rate(file_path: pathlib.Path | str) -> Metric:
     Syllables approximated by peaks in amplitude envelope (smoothed RMS).
     Returns single rate value (no std, as it's aggregate).
     """
-    fs, signal = _load_audio(file_path)
+    signal, fs = _load_audio(file_path)
     duration = len(signal) / fs
     if duration == 0:
         return Metric(
@@ -377,7 +381,7 @@ def extract_jitter(file_path: pathlib.Path | str) -> Metric:
     Extracts jitter (pitch perturbation).
     Returns mean local jitter (%) from F0 values.
     """
-    fs, signal = _load_audio(file_path)
+    signal, fs = _load_audio(file_path)
     frames = _frame_signal(signal, fs)
     f0_values = []
     for frame in frames:
@@ -405,7 +409,7 @@ def extract_shimmer(file_path: pathlib.Path | str) -> Metric:
     Extracts shimmer (amplitude perturbation).
     Returns mean local shimmer (%) from RMS values.
     """
-    fs, signal = _load_audio(file_path)
+    signal, fs = _load_audio(file_path)
     frames = _frame_signal(signal, fs)
     rms_values = [np.sqrt(np.mean(frame**2)) for frame in frames if len(frame) > 0]
     rms_values = np.array(rms_values)
@@ -425,7 +429,7 @@ def extract_spectral_centroid(file_path: pathlib.Path | str) -> dict[str, Metric
     Extracts spectral centroid (brightness indicator).
     Returns mean and std in Hz, computed per STFT frame.
     """
-    fs, signal = _load_audio(file_path)
+    signal, fs = _load_audio(file_path)
     f, t, Zxx = stft(signal, fs=fs, nperseg=int(fs * 0.03), noverlap=int(fs * 0.01))
     magnitude = np.abs(Zxx)
     centroids = []
@@ -462,7 +466,7 @@ def extract_spectral_rolloff(file_path: pathlib.Path | str) -> dict[str, Metric]
     Extracts spectral rolloff (high-frequency energy boundary).
     Returns mean and std in Hz (85% energy threshold).
     """
-    fs, signal = _load_audio(file_path)
+    signal, fs = _load_audio(file_path)
     f, t, Zxx = stft(signal, fs=fs, nperseg=int(fs * 0.03), noverlap=int(fs * 0.01))
     magnitude = np.abs(Zxx)
     rolloffs = []
@@ -501,7 +505,7 @@ def extract_spectral_entropy(file_path: pathlib.Path | str) -> dict[str, Metric]
     Extracts spectral entropy (spectral disorder/flatness).
     Returns mean and std (unitless, 0-1 normalized).
     """
-    fs, signal = _load_audio(file_path)
+    signal, fs = _load_audio(file_path)
     _, _, Zxx = stft(signal, fs=fs, nperseg=int(fs * 0.03), noverlap=int(fs * 0.01))
     magnitude = np.abs(Zxx)
     entropies = []
@@ -541,7 +545,7 @@ def extract_average_talk_time(file_path: pathlib.Path | str) -> dict[str, Metric
     Uses same energy threshold as pauses (0.01 * global RMS, min_talk: 0.1s).
     Returns mean and std of talk segment durations in seconds.
     """
-    fs, signal = _load_audio(file_path)
+    signal, fs = _load_audio(file_path)
     global_rms = np.sqrt(np.mean(signal**2))
     frame_length = 0.03
     hop_length = 0.01
@@ -597,7 +601,7 @@ def extract_hnr(file_path: pathlib.Path | str) -> dict[str, Metric]:
     Extracts Harmonics-to-Noise Ratio (voice quality/clarity).
     Returns mean and std in dB.
     """
-    fs, signal = _load_audio(file_path)
+    signal, fs = _load_audio(file_path)
     frames = _frame_signal(signal, fs)
     hnr_values = []
     for frame in frames:
@@ -640,10 +644,9 @@ def extract_articulation_rate(file_path: pathlib.Path | str) -> Metric:
     pauses = extract_pauses(file_path)  # Reuse your function
     total_pause = pauses["total_duration"].value
     speaking_metric = extract_speaking_rate(file_path)
-    num_syllables = speaking_metric.value * (
-        len(_load_audio(file_path)[1]) / _load_audio(file_path)[0]
-    )  # Back-calculate approx syllables
-    fs, signal = _load_audio(file_path)
+    signal, fs = _load_audio(file_path)
+    # Back-calculate approx syllables
+    num_syllables = speaking_metric.value * (len(signal) / fs)  # pyright: ignore
     total_dur = len(signal) / fs
     voiced_dur = total_dur - total_pause
     rate = num_syllables / voiced_dur if voiced_dur > 0 else 0.0
@@ -662,7 +665,7 @@ def extract_voiced_ratio(file_path: pathlib.Path | str) -> Metric:
     Extracts ratio of voiced to total frames.
     Returns single float (0-1).
     """
-    fs, signal = _load_audio(file_path)
+    signal, fs = _load_audio(file_path)
     frames = _frame_signal(signal, fs)
     voiced_count = 0
     for frame in frames:

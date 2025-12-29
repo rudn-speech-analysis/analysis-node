@@ -3,6 +3,7 @@ import whisper
 import traceback
 import pathlib
 import logging
+import librosa
 
 from analysis_node.analysis.processors import AggregateProcessor, Processor
 from analysis_node.analysis.processors.prosodic_metrics import ProsodicProcessor
@@ -161,8 +162,12 @@ class AnalysisPipeline:
 
         yield ProgressMsg(0, None, "Splitting audio.")
 
-        # channel_files = list(split_audio(source_audio_file))
-        channel_files = self.diarizer.process(source_audio_file)
+        y, sr = librosa.load(source_audio_file, sr=None, mono=False)
+
+        if y.ndim != 2 or y.shape[0] != 2:
+            channel_files = self.diarizer.process(y, sr)
+        else:
+            channel_files = split_audio(y, sr)
 
         metrics = []
         for channel_file in channel_files:

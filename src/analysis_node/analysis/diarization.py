@@ -41,21 +41,19 @@ class Diarizer:
             token=True,
         ).to(torch.device(device))
 
-    def load_file(self, file: pathlib.Path | str):
-        audio_np, sample_rate = librosa.load(file, sr=None, mono=False)
-
+    def form_data(self, y: np.ndarray, sr: int | float):
         # # Ensure audio_np is (n_samples, n_channels)
-        if audio_np.ndim == 1:
-            audio_np = audio_np.reshape(1, -1)
-        elif audio_np.ndim == 2:
+        if y.ndim == 1:
+            y = y.reshape(1, -1)
+        elif y.ndim == 2:
             # librosa loads as (n_channels, n_samples) already
             pass
         else:
             raise ValueError("Unexpected audio dimensions")
 
         # {'waveform': (channel, time) torch.Tensor, 'sample_rate': int}
-        waveform = torch.from_numpy(audio_np).float()
-        data = {"waveform": waveform, "sample_rate": sample_rate}
+        waveform = torch.from_numpy(y).float()
+        data = {"waveform": waveform, "sample_rate": sr}
         return data
 
     def get_turns(self, data):
@@ -101,8 +99,8 @@ class Diarizer:
             speaker_audio = np.sum(speaker_audio, axis=1)
             yield (speaker, speaker_audio, sample_rate)
 
-    def process(self, segment_file: pathlib.Path | str):
-        data = self.load_file(segment_file)
+    def process(self, y: np.ndarray, sr: int | float):
+        data = self.form_data(y, sr)
         turns = self.get_turns(data)
         for speaker, waveform, sample_rate in self.get_waveforms(data, turns):
             file = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)

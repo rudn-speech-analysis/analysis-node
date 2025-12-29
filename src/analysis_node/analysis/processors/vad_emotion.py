@@ -6,11 +6,11 @@ from transformers.models.wav2vec2.modeling_wav2vec2 import (
     Wav2Vec2Model,
     Wav2Vec2PreTrainedModel,
 )
-from scipy.io import wavfile
+import librosa
 import logging
 
 from analysis_node.analysis.processors.processor import Processor
-from analysis_node.analysis.processors.utils import ModelHead, resample_to
+from analysis_node.analysis.processors.utils import ModelHead
 from analysis_node.messages import MetricType, Metric, MetricCollection
 
 
@@ -71,7 +71,7 @@ class VadEmotionProcessor(Processor):
         Parameters
         ----------
         audio : np.ndarray
-            Raw waveform (1D or 2D with batch).
+            Raw waveform (1D or 2D).
         sampling_rate : int
             Sampling rate of the input audio.
         return_embeddings : bool
@@ -89,10 +89,6 @@ class VadEmotionProcessor(Processor):
             audio = audio[None, :]
         audio = audio.astype(np.float32)
 
-        if sampling_rate != self.REQUIRED_SAMPLING_RATE:
-            audio = resample_to(audio, sampling_rate, self.REQUIRED_SAMPLING_RATE)
-            sampling_rate = self.REQUIRED_SAMPLING_RATE
-
         inputs = self.processor(
             audio,
             sampling_rate=sampling_rate,  # pyright: ignore
@@ -108,8 +104,8 @@ class VadEmotionProcessor(Processor):
         return result.cpu().numpy()
 
     def process(self, segment_file: pathlib.Path | str) -> MetricCollection:
-        sample_rate, waveform = wavfile.read(segment_file)
-        vals = self(waveform, sample_rate)
+        y, sr = librosa.load(segment_file, sr=self.REQUIRED_SAMPLING_RATE, mono=False)
+        vals = self(y, int(sr))
         metrics = [
             Metric(k, MetricType.FLOAT, v, None)
             for (k, v) in zip(["arousal", "dominance", "valence"], vals[0])
