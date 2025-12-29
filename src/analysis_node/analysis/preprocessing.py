@@ -143,10 +143,11 @@ def segmentize(
     whispermodel,
     config: Config,
 ) -> Generator[Tuple[WhisperMetrics, pathlib.Path]]:
+    lang = config.values["models"]["whisper"]["lang"]
     transcription = whispermodel.transcribe(
         str(source),
         word_timestamps=True,
-        language="ru",
+        language=lang,
     )
 
     segments = list(
