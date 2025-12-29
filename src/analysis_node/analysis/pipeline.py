@@ -175,7 +175,12 @@ class AnalysisPipeline:
 
             y, sr = librosa.load(source_audio_file, sr=None, mono=False)
 
-            if y.ndim != 2 or y.shape[0] != 2:
+            if request.force_diarize is None:
+                if y.ndim != 2 or y.shape[0] != 2:
+                    channel_files = self.diarizer.process(y, sr)
+                else:
+                    channel_files = split_audio(y, sr)
+            elif request.force_diarize:
                 channel_files = self.diarizer.process(y, sr)
             else:
                 channel_files = split_audio(y, sr)
@@ -270,16 +275,16 @@ class AnalysisPipeline:
             try:
                 with open(transcript_file.name, "r") as f:
                     transcript_text = f.read()
-                    logger.info("Transcript text: " + transcript_text)
-                    logger.info("Transcript length: " + str(len(transcript_text)))
+                    # logger.info("Transcript text: " + transcript_text)
+                    # logger.info("Transcript length: " + str(len(transcript_text)))
             except Exception as e:
                 logger.error(f"Error reading transcript: {e}")
                 wer_metric_collection.metrics.append(Metric("wer_error", MetricType.STR, "error reading user-provided transcript as text: " + str(e), unit=None, description="Details for the error while calculating word-error rate"))
                 return RecordingMetrics([audio_metrics, wer_metric_collection])
 
             yield ProgressMsg(20, None, "Calculating word error rate.")
-            logging.info(f"Transcript: {transcript_text}")
-            logging.info(f"Audio: {all_text}")
+            # logging.info(f"Transcript: {transcript_text}")
+            # logging.info(f"Audio: {all_text}")
             wer = compute_wer(transcript_text, all_text)
             if np.isnan(wer) or np.isinf(wer):
                 wer_metric_collection.metrics.append(Metric("wer_error", MetricType.STR, "The calculated word-error rate was infinite. To prevent numeric overflow, it has been replaced with -1.", unit=None, description="Details for the error while calculating word-error rate"))

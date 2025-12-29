@@ -100,6 +100,7 @@ class Diarizer:
             yield (speaker, speaker_audio, sample_rate)
 
     def process(self, y: np.ndarray, sr: int | float):
+        """Yields a file per speaker"""
         data = self.form_data(y, sr)
         turns = self.get_turns(data)
         for speaker, waveform, sample_rate in self.get_waveforms(data, turns):

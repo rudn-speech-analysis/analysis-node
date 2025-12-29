@@ -42,6 +42,9 @@ logger = logging.getLogger(__name__)
 
 
 def split_audio(y: np.ndarray, sr: int | float) -> list[tempfile._TemporaryFileWrapper]:
+    """
+    Yields a file per channel
+    """
     def export(channel) -> tempfile._TemporaryFileWrapper:
         tmp_file = tempfile.NamedTemporaryFile(suffix=".wav")
         sf.write(tmp_file.name, channel, sr, subtype="PCM_16")
