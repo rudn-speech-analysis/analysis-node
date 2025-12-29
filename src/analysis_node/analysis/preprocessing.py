@@ -51,7 +51,7 @@ def split_audio(y: np.ndarray, sr: int | float) -> list[tempfile._TemporaryFileW
     return channels
 
 
-def filger_segments(segment_data: WhisperMetrics, config: Config) -> bool:
+def filter_segments(segment_data: WhisperMetrics, config: Config) -> bool:
     cfg = config.values["preprocessing"]
     # Removing short segments
     if (segment_data.end - segment_data.start) < cfg["min_segment_length_sec"]:
@@ -142,7 +142,12 @@ def segmentize(
     source: pathlib.Path | str,
     whispermodel,
     config: Config,
-) -> Generator[Tuple[WhisperMetrics, pathlib.Path]]:
+) -> Generator[Tuple[WhisperMetrics, pathlib.Path], None, list[WhisperMetrics]]:
+    """
+    Yields a tuple of (segment_whisper_data, path_with_segment_audio_file).
+    The segments yielded are merged by distance.
+    Then, returns the unmerged segments, as returned by Whisper.
+    """
     lang = config.values["models"]["whisper"]["lang"]
     transcription = whispermodel.transcribe(
         str(source),
@@ -150,9 +155,9 @@ def segmentize(
         language=lang,
     )
 
-    segments = list(
+    unmerged_segments = list(
         filter(
-            partial(filger_segments, config=config),
+            partial(filter_segments, config=config),
             [
                 dacite.from_dict(
                     data_class=WhisperMetrics,
@@ -167,9 +172,9 @@ def segmentize(
         "min_segment_distance_sec"
     ]
     if isinstance(min_segment_distance_sec, bool) and not min_segment_distance_sec:
-        merged_segments = segments
+        merged_segments = unmerged_segments[:]
     else:
-        merged_segments = merge_close_segments(segments, min_segment_distance_sec)
+        merged_segments = merge_close_segments(unmerged_segments, min_segment_distance_sec)
 
     y, sr = librosa.load(source, sr=None, mono=False)
     logger.info(f"Segmentizing {source} with {len(transcription["segments"])} segments")
@@ -193,6 +198,7 @@ def segmentize(
                 subtype="PCM_16",
             )
             yield (segment_data, pathlib.Path(tmp_file.name))
+    return unmerged_segments
 
 
 def get_audio_metrics(audio_file: pathlib.Path | str) -> MetricCollection:

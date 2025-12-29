@@ -15,7 +15,7 @@ from analysis_node.messages import (
     KafkaMsgOption,
     ProgressMsg,
 )
-from analysis_node.utils import Generator, NpEncoder
+from analysis_node.utils import GeneratorReturnCatcher, NpEncoder
 from analysis_node.analysis import MetricsGenerator
 
 logger = logging.getLogger(__name__)
@@ -70,6 +70,8 @@ def prepare_kafka(config: Config) -> Tuple[KafkaConsumer, KafkaSingleTopicProduc
         value_deserializer=lambda x: dacite.from_dict(
             data_class=KafkaAnalysisRequest, data=json.loads(x.decode("utf-8"))
         ),
+        max_poll_interval_ms=cfg.get("max_poll_interval_ms", 5*60*1000),
+        allow_auto_create_topics=True,
     )
     logger.info("Created Kafka consumer")
 
@@ -98,7 +100,7 @@ def loop_kafka(
         id = request.id
         logger.info(f"Processing request with id: {id}")
 
-        p = Generator(processor(request.data))
+        p = GeneratorReturnCatcher(processor(request.data))
         try:
             for output in p:
                 send(id, output)

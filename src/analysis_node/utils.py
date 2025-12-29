@@ -9,7 +9,26 @@ from dataclasses import fields, is_dataclass
 # Source - https://stackoverflow.com/a/34073559
 # Posted by Ferdinand Beyer, modified by community. See post 'Timeline' for change history
 # Retrieved 2025-12-08, License - CC BY-SA 4.0
-class Generator:
+class GeneratorReturnCatcher:
+    """
+    Used to receive the return value from a generator.
+    Use as follows:
+
+    ```
+    def foobar():
+        yield 1
+        yield 2
+        return 3
+
+    gen = GeneratorReturnCatcher(foobar())
+    for x in gen:
+        print('item', x)
+    
+    print('return', gen.value)
+
+    # prints: item 1, item 2, return 3
+    ```
+    """
     def __init__(self, gen):
         self.gen = gen
 
@@ -18,15 +37,17 @@ class Generator:
         return self.value
 
 
-def fetch_to_tmp_file(url: str, file_extension="") -> pathlib.Path:
+def fetch_to_tmp_file(url: str, file_extension="") -> tempfile._TemporaryFileWrapper:
     response = requests.get(url, stream=True)
     response.raise_for_status()
 
-    with tempfile.NamedTemporaryFile(suffix=file_extension, delete=False) as tmp_file:
-        for chunk in response.iter_content(chunk_size=8192):
-            tmp_file.write(chunk)
+    tmp_file = tempfile.NamedTemporaryFile(suffix=file_extension, delete=False, delete_on_close=False)
+    for chunk in response.iter_content(chunk_size=8192):
+        tmp_file.write(chunk)
+    tmp_file.flush()
+    tmp_file.seek(0)
 
-    return pathlib.Path(tmp_file.name)
+    return tmp_file
 
 
 class NpEncoder(json.JSONEncoder):

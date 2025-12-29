@@ -22,6 +22,7 @@ SCHEMA = {
         "kafka": {
             "type": "object",
             "properties": {
+                "max_poll_interval_ms": {"type": "integer"},
                 "bootstrap_servers": {"type": "string"},
                 "group_id": {"type": "string"},
                 "topics": {

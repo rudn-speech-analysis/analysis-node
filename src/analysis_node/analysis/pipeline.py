@@ -1,4 +1,5 @@
 from typing import Generator, Tuple
+import numpy as np
 import whisper
 import traceback
 import pathlib
@@ -7,8 +8,9 @@ import librosa
 
 from analysis_node.analysis.processors import AggregateProcessor, Processor
 from analysis_node.analysis.processors.prosodic_metrics import ProsodicProcessor
+from analysis_node.analysis.wer import compute_wer
 from analysis_node.config import Config
-from analysis_node.utils import fetch_to_tmp_file, list_dict_to_dict_list
+from analysis_node.utils import GeneratorReturnCatcher, fetch_to_tmp_file, list_dict_to_dict_list
 from analysis_node.messages import (
     Metric,
     MetricCollection,
@@ -100,13 +102,20 @@ class AnalysisPipeline:
     ) -> Generator[
         Tuple[dict[str, MetricCollection], dict[str, MetricCollection], WhisperMetrics],
         None,
-        None,
+        list[WhisperMetrics],
     ]:
-        for segment_data, segment_path in segmentize(
+        """
+        Yields some metrics per each merged segment.
+        Returns raw Whisper metrics per unmerged segment.
+        """
+        gen = GeneratorReturnCatcher(segmentize(
             channel_file, self.whisper, self.config
-        ):
+        ))
+
+        for segment_data, segment_path in gen:
             per_segment, per_channel = self._collect_metrics_per_segment(segment_path)
             yield per_segment, per_channel, segment_data
+        return gen.value
 
     def _prepare_channel_metrics_report(
         self,
@@ -157,74 +166,124 @@ class AnalysisPipeline:
 
         yield ProgressMsg(0, None, "Loading audio.")
 
-        source_audio_file = fetch_to_tmp_file(request.download_url)
-        audio_metrics = get_audio_metrics(source_audio_file)
+        source_audio_file_obj = fetch_to_tmp_file(request.download_url)
+        with source_audio_file_obj:
+            source_audio_file = pathlib.Path(source_audio_file_obj.name)
+            audio_metrics = get_audio_metrics(source_audio_file)
 
-        yield ProgressMsg(0, None, "Splitting audio.")
+            yield ProgressMsg(0, None, "Splitting audio.")
 
-        y, sr = librosa.load(source_audio_file, sr=None, mono=False)
+            y, sr = librosa.load(source_audio_file, sr=None, mono=False)
 
-        if y.ndim != 2 or y.shape[0] != 2:
-            channel_files = self.diarizer.process(y, sr)
-        else:
-            channel_files = split_audio(y, sr)
+            if y.ndim != 2 or y.shape[0] != 2:
+                channel_files = self.diarizer.process(y, sr)
+            else:
+                channel_files = split_audio(y, sr)
 
-        metrics = []
-        for channel_file in channel_files:
-            with channel_file:
-                channel = pathlib.Path(channel_file.name)
-                channel_idx = len(metrics)
-                last_progress = 0
+            unmerged_whisper_metrics: list[WhisperMetrics] = []
 
-                logger.info(
-                    f"Begin processing channel {channel_idx} from file {channel}"
-                )
-                yield ProgressMsg(
-                    last_progress, channel_idx, "Begin processing channel."
-                )
+            metrics = []
+            for channel_file in channel_files:
+                with channel_file:
+                    channel = pathlib.Path(channel_file.name)
+                    channel_idx = len(metrics)
+                    last_progress = 0
 
-                segment_metrics_log = list()
-                channel_metrics_log = list()
-                whisper_data_log = list()
+                    logger.info(
+                        f"Begin processing channel {channel_idx} from file {channel}"
+                    )
+                    yield ProgressMsg(
+                        last_progress, channel_idx, "Begin processing channel."
+                    )
 
-                percent_done = 0
-                duration_seconds: float = audio_metrics[
-                    "duration"
-                ].value  # pyright: ignore
-                for (
-                    segment_metrics,
-                    channel_metrics,
-                    whisper_data,
-                ) in self._collect_metrics_per_channel(channel):
-                    end = whisper_data.end
-                    percent_done = round((end / duration_seconds) * 100)
+                    segment_metrics_log = list()
+                    channel_metrics_log = list()
+                    whisper_data_log = list()
 
-                    if percent_done > last_progress + cfg["progress_delta"]:
-                        last_progress = percent_done
-                        logger.info(
-                            f"Processing channel {channel_idx}: {round(percent_done)}%"
-                        )
-                        yield ProgressMsg(percent_done, channel_idx, None)
+                    percent_done = 0
+                    duration_seconds: float = audio_metrics[
+                        "duration"
+                    ].value  # pyright: ignore
 
-                    segment_metrics_log.append(segment_metrics)
-                    channel_metrics_log.append(channel_metrics)
-                    whisper_data_log.append(whisper_data)
+                    gen = GeneratorReturnCatcher(
+                        self._collect_metrics_per_channel(channel)
+                    )
 
-                logger.info(
-                    f"Preparing channel metrics report for channel {len(metrics)}"
-                )
-                yield ProgressMsg(
-                    percent_done, channel_idx, "Preparing channel metrics report."
-                )
-                cm = self._prepare_channel_metrics_report(
-                    len(metrics),
-                    segment_metrics_log,
-                    channel_metrics_log,
-                    whisper_data_log,
-                    duration_seconds,
-                )
-                metrics.append(cm)
+                    for (
+                        segment_metrics,
+                        channel_metrics,
+                        whisper_data,
+                    ) in gen:
+                        end = whisper_data.end
+                        percent_done = round((end / duration_seconds) * 100)
 
-                yield cm
+                        if percent_done > last_progress + cfg["progress_delta"]:
+                            last_progress = percent_done
+                            logger.info(
+                                f"Processing channel {channel_idx}: {round(percent_done)}%"
+                            )
+                            yield ProgressMsg(percent_done, channel_idx, None)
 
-        return RecordingMetrics([audio_metrics])
+                        segment_metrics_log.append(segment_metrics)
+                        channel_metrics_log.append(channel_metrics)
+                        whisper_data_log.append(whisper_data)
+
+                    unmerged_whisper_metrics.extend(gen.value)
+
+                    logger.info(
+                        f"Preparing channel metrics report for channel {len(metrics)}"
+                    )
+                    yield ProgressMsg(
+                        percent_done, channel_idx, "Preparing channel metrics report."
+                    )
+                    cm = self._prepare_channel_metrics_report(
+                        len(metrics),
+                        segment_metrics_log,
+                        channel_metrics_log,
+                        whisper_data_log,
+                        duration_seconds,
+                    )
+                    metrics.append(cm)
+
+                    yield cm
+
+            unmerged_whisper_metrics.sort(key=lambda m: m.start)
+            all_text = ' '.join([i.text for i in unmerged_whisper_metrics])
+
+            wer_metric_collection = MetricCollection("internal/word_error_rate", [], "Word error rate calculation")
+
+            if not request.transcript_url:
+                return RecordingMetrics([audio_metrics])
+
+            yield ProgressMsg(
+                0, None, "Downloading user-provided transcript."
+            )
+            try:
+                transcript_file = fetch_to_tmp_file(request.transcript_url)
+            except Exception as e:
+                logger.error(f"Error downloading transcript: {e}")
+                wer_metric_collection.metrics.append(Metric("wer_error", MetricType.STR, "error downloading user-provided transcript: " + str(e), unit=None, description="Details for the error while calculating word-error rate"))
+                return RecordingMetrics([audio_metrics, wer_metric_collection])
+
+            logger.info(f"Transcript file: {transcript_file.name}")
+            yield ProgressMsg(10, None, "Reading transcript.")
+            try:
+                with open(transcript_file.name, "r") as f:
+                    transcript_text = f.read()
+                    logger.info("Transcript text: " + transcript_text)
+                    logger.info("Transcript length: " + str(len(transcript_text)))
+            except Exception as e:
+                logger.error(f"Error reading transcript: {e}")
+                wer_metric_collection.metrics.append(Metric("wer_error", MetricType.STR, "error reading user-provided transcript as text: " + str(e), unit=None, description="Details for the error while calculating word-error rate"))
+                return RecordingMetrics([audio_metrics, wer_metric_collection])
+
+            yield ProgressMsg(20, None, "Calculating word error rate.")
+            logging.info(f"Transcript: {transcript_text}")
+            logging.info(f"Audio: {all_text}")
+            wer = compute_wer(transcript_text, all_text)
+            if np.isnan(wer) or np.isinf(wer):
+                wer_metric_collection.metrics.append(Metric("wer_error", MetricType.STR, "The calculated word-error rate was infinite. To prevent numeric overflow, it has been replaced with -1.", unit=None, description="Details for the error while calculating word-error rate"))
+                wer = -1
+            wer_metric_collection.metrics.append(Metric("wer", MetricType.FLOAT, wer, None, "Word error rate"))
+
+            return RecordingMetrics([audio_metrics, wer_metric_collection])
