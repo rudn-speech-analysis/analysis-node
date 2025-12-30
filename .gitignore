@@ -2,6 +2,7 @@ env
 config.yaml
 dataset
 examples/output
+models
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
