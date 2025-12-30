@@ -70,6 +70,13 @@ SCHEMA = {
                     },
                     "required": ["num_layers"],
                 },
+                "anomaly_detection": {
+                    "type": "object",
+                    "properties": {
+                        "model_file": {"type": "string"},
+                    },
+                    "required": ["model_file"],
+                },
             },
             "required": [
                 "device",
@@ -77,6 +84,7 @@ SCHEMA = {
                 # "emotion2vec",
                 # "wav2vec2_emotion",
                 "wav2vec2_age_gender",
+                "anomaly_detection",
             ],
         },
         "preprocessing": {

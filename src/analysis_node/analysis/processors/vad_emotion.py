@@ -56,7 +56,7 @@ class VadEmotionProcessor(Processor):
         self.model.to(self.device)  # pyright: ignore
         self.model.eval()
 
-        logger.info(f"Created {self.__class__.__name__}")
+        logger.info(f"Done creating {self.__class__.__name__}")
 
     @torch.no_grad()
     def __call__(
@@ -66,7 +66,7 @@ class VadEmotionProcessor(Processor):
         return_embeddings: bool = False,
     ) -> np.ndarray:
         """
-        Analyze raw audio for emotion (arousal, dominance, valence) or embeddings.
+        Analyze raw audio for emotion (arousal, valence) or embeddings.
 
         Parameters
         ----------
@@ -109,5 +109,6 @@ class VadEmotionProcessor(Processor):
         metrics = [
             Metric(k, MetricType.FLOAT, v, None)
             for (k, v) in zip(["arousal", "dominance", "valence"], vals[0])
+            if k != "dominance"
         ]
         return MetricCollection(self._model_name, metrics)

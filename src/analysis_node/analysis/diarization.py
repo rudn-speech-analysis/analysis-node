@@ -41,6 +41,8 @@ class Diarizer:
             token=True,
         ).to(torch.device(device))
 
+        logger.info(f"Done creating {self.__class__.__name__}")
+
     def form_data(self, y: np.ndarray, sr: int | float):
         # # Ensure audio_np is (n_samples, n_channels)
         if y.ndim == 1:

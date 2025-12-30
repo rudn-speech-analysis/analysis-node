@@ -1,6 +1,5 @@
 import requests
 import tempfile
-import pathlib
 import json
 import numpy as np
 from dataclasses import fields, is_dataclass
@@ -23,12 +22,13 @@ class GeneratorReturnCatcher:
     gen = GeneratorReturnCatcher(foobar())
     for x in gen:
         print('item', x)
-    
+
     print('return', gen.value)
 
     # prints: item 1, item 2, return 3
     ```
     """
+
     def __init__(self, gen):
         self.gen = gen
 
@@ -41,7 +41,9 @@ def fetch_to_tmp_file(url: str, file_extension="") -> tempfile._TemporaryFileWra
     response = requests.get(url, stream=True)
     response.raise_for_status()
 
-    tmp_file = tempfile.NamedTemporaryFile(suffix=file_extension, delete=False, delete_on_close=False)
+    tmp_file = tempfile.NamedTemporaryFile(
+        suffix=file_extension, delete=False, delete_on_close=False
+    )
     for chunk in response.iter_content(chunk_size=8192):
         tmp_file.write(chunk)
     tmp_file.flush()
@@ -64,7 +66,7 @@ class NpEncoder(json.JSONEncoder):
 def list_dict_to_dict_list(data: list[dict]) -> dict[str, list]:
     """
     list[dict[str, Any]] -> dict[str, list[Any]]
-    list[dataclass[str, num]] -> dict[str, list[num]]
+    list[dataclass[str, Any]] -> dict[str, list[Any]]
     """
 
     if not data:

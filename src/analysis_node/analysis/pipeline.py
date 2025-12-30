@@ -6,11 +6,16 @@ import pathlib
 import logging
 import librosa
 
+from analysis_node.analysis.anomaly_detection import AnomalyDetectionPipeline
 from analysis_node.analysis.processors import AggregateProcessor, Processor
 from analysis_node.analysis.processors.prosodic_metrics import ProsodicProcessor
 from analysis_node.analysis.wer import compute_wer
 from analysis_node.config import Config
-from analysis_node.utils import GeneratorReturnCatcher, fetch_to_tmp_file, list_dict_to_dict_list
+from analysis_node.utils import (
+    GeneratorReturnCatcher,
+    fetch_to_tmp_file,
+    list_dict_to_dict_list,
+)
 from analysis_node.messages import (
     Metric,
     MetricCollection,
@@ -44,6 +49,8 @@ MetricsGenerator = Generator[ChannelMetrics | ProgressMsg, None, RecordingMetric
 
 class AnalysisPipeline:
     def __init__(self, config: Config):
+        logger.info(f"Creating {self.__class__.__name__}")
+
         cfg = config.values["models"]
         device = cfg["device"]
 
@@ -67,9 +74,11 @@ class AnalysisPipeline:
                 device,
             ),
         }
+        self.anomaly_detector = AnomalyDetectionPipeline(config)
+
         self.config = config
 
-        logger.info(f"Created {self.__class__.__name__}")
+        logger.info(f"Done creating {self.__class__.__name__}")
 
     def _collect_metrics_per_segment(
         self,
@@ -108,9 +117,9 @@ class AnalysisPipeline:
         Yields some metrics per each merged segment.
         Returns raw Whisper metrics per unmerged segment.
         """
-        gen = GeneratorReturnCatcher(segmentize(
-            channel_file, self.whisper, self.config
-        ))
+        gen = GeneratorReturnCatcher(
+            segmentize(channel_file, self.whisper, self.config)
+        )
 
         for segment_data, segment_path in gen:
             per_segment, per_channel = self._collect_metrics_per_segment(segment_path)
@@ -201,9 +210,9 @@ class AnalysisPipeline:
                         last_progress, channel_idx, "Begin processing channel."
                     )
 
-                    segment_metrics_log = list()
-                    channel_metrics_log = list()
-                    whisper_data_log = list()
+                    segment_metrics_log: list[dict[str, MetricCollection]] = list()
+                    channel_metrics_log: list[dict[str, MetricCollection]] = list()
+                    whisper_data_log: list[WhisperMetrics] = list()
 
                     percent_done = 0
                     duration_seconds: float = audio_metrics[
@@ -233,6 +242,11 @@ class AnalysisPipeline:
                         channel_metrics_log.append(channel_metrics)
                         whisper_data_log.append(whisper_data)
 
+                        anomaly_score = self.anomaly_detector(
+                            segment_metrics | channel_metrics
+                        )
+                        segment_metrics_log[-1].update({"anomaly": anomaly_score})
+
                     unmerged_whisper_metrics.extend(gen.value)
 
                     logger.info(
@@ -253,21 +267,29 @@ class AnalysisPipeline:
                     yield cm
 
             unmerged_whisper_metrics.sort(key=lambda m: m.start)
-            all_text = ' '.join([i.text for i in unmerged_whisper_metrics])
+            all_text = " ".join([i.text for i in unmerged_whisper_metrics])
 
-            wer_metric_collection = MetricCollection("internal/word_error_rate", [], "Word error rate calculation")
+            wer_metric_collection = MetricCollection(
+                "internal/word_error_rate", [], "Word error rate calculation"
+            )
 
             if not request.transcript_url:
                 return RecordingMetrics([audio_metrics])
 
-            yield ProgressMsg(
-                0, None, "Downloading user-provided transcript."
-            )
+            yield ProgressMsg(0, None, "Downloading user-provided transcript.")
             try:
                 transcript_file = fetch_to_tmp_file(request.transcript_url)
             except Exception as e:
                 logger.error(f"Error downloading transcript: {e}")
-                wer_metric_collection.metrics.append(Metric("wer_error", MetricType.STR, "error downloading user-provided transcript: " + str(e), unit=None, description="Details for the error while calculating word-error rate"))
+                wer_metric_collection.metrics.append(
+                    Metric(
+                        "wer_error",
+                        MetricType.STR,
+                        "error downloading user-provided transcript: " + str(e),
+                        unit=None,
+                        description="Details for the error while calculating word-error rate",
+                    )
+                )
                 return RecordingMetrics([audio_metrics, wer_metric_collection])
 
             logger.info(f"Transcript file: {transcript_file.name}")
@@ -279,7 +301,15 @@ class AnalysisPipeline:
                     # logger.info("Transcript length: " + str(len(transcript_text)))
             except Exception as e:
                 logger.error(f"Error reading transcript: {e}")
-                wer_metric_collection.metrics.append(Metric("wer_error", MetricType.STR, "error reading user-provided transcript as text: " + str(e), unit=None, description="Details for the error while calculating word-error rate"))
+                wer_metric_collection.metrics.append(
+                    Metric(
+                        "wer_error",
+                        MetricType.STR,
+                        "error reading user-provided transcript as text: " + str(e),
+                        unit=None,
+                        description="Details for the error while calculating word-error rate",
+                    )
+                )
                 return RecordingMetrics([audio_metrics, wer_metric_collection])
 
             yield ProgressMsg(20, None, "Calculating word error rate.")
@@ -287,8 +317,19 @@ class AnalysisPipeline:
             # logging.info(f"Audio: {all_text}")
             wer = compute_wer(transcript_text, all_text)
             if np.isnan(wer) or np.isinf(wer):
-                wer_metric_collection.metrics.append(Metric("wer_error", MetricType.STR, "The calculated word-error rate was infinite. To prevent numeric overflow, it has been replaced with -1.", unit=None, description="Details for the error while calculating word-error rate"))
+                wer_metric_collection.metrics.append(
+                    Metric(
+                        "wer_error",
+                        MetricType.STR,
+                        "The calculated word-error rate was infinite. To prevent numeric overflow, it has been replaced with -1.",
+                        unit=None,
+                        description="Details for the error while calculating word-error rate",
+                    )
+                )
                 wer = -1
-            wer_metric_collection.metrics.append(Metric("wer", MetricType.FLOAT, wer, None, "Word error rate"))
+            wer_metric_collection.metrics.append(
+                Metric("wer", MetricType.FLOAT, wer, None, "Word error rate")
+            )
 
             return RecordingMetrics([audio_metrics, wer_metric_collection])
+

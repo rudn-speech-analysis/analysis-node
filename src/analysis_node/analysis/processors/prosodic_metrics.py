@@ -1,3 +1,4 @@
+import logging
 import pathlib
 import numpy as np
 import librosa
@@ -6,6 +7,8 @@ from typing import Callable
 
 from analysis_node.messages import MetricCollection, Metric, MetricType
 from analysis_node.analysis.processors.processor import Processor
+
+logger = logging.getLogger(__name__)
 
 METRIC_EXTRACTORS: list[Callable[[pathlib.Path | str], dict[str, Metric] | Metric]] = (
     list()
@@ -20,6 +23,8 @@ def metric(func):
 class ProsodicProcessor(Processor):
     def __init__(self):
         super().__init__("audio-metrics-processor", "cpu")
+
+        logger.info(f"Done creating {self.__class__.__name__}")
 
     def process(self, segment_file: pathlib.Path | str) -> MetricCollection:
         outputs = [f(segment_file) for f in METRIC_EXTRACTORS]

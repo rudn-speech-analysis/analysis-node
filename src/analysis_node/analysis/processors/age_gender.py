@@ -75,7 +75,7 @@ class AgeGenderProcessor(AggregateProcessor):
         self.model.to(self.device)  # pyright: ignore
         self.model.eval()
 
-        logger.info(f"Created {self.__class__.__name__}")
+        logger.info(f"Done creating {self.__class__.__name__}")
 
     @torch.no_grad()
     def __call__(
