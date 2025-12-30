@@ -242,7 +242,7 @@ class AnalysisPipeline:
                         channel_metrics_log.append(channel_metrics)
                         whisper_data_log.append(whisper_data)
 
-                        anomaly_score = self.anomaly_detector(
+                        anomaly_score = self.anomaly_detector.detect(
                             segment_metrics | channel_metrics
                         )
                         segment_metrics_log[-1].update({"anomaly": anomaly_score})
@@ -332,4 +332,3 @@ class AnalysisPipeline:
             )
 
             return RecordingMetrics([audio_metrics, wer_metric_collection])
-

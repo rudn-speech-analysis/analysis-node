@@ -2,6 +2,7 @@ import joblib
 import pandas as pd
 import logging
 from sklearn.pipeline import Pipeline
+import numpy as np
 
 from analysis_node.config import Config
 from analysis_node.messages import Metric, MetricCollection, MetricType
@@ -29,7 +30,13 @@ class AnomalyDetectionPipeline:
 
         logger.info(f"Done creating {self.__class__.__name__}")
 
-    def __call__(self, data: dict[str, MetricCollection]) -> MetricCollection:
+    def predict(self, df: pd.DataFrame) -> np.ndarray:
+        return self.pipeline.predict(df)
+
+    def decision_function(self, df: pd.DataFrame) -> np.ndarray:
+        return self.pipeline.decision_function(df)
+
+    def detect(self, data: dict[str, MetricCollection]) -> MetricCollection:
         anomalous = [v for k, v in data.items() if k not in self.NON_ANOMALOUS]
         metrics = {
             m.name: [m.value]
@@ -40,7 +47,7 @@ class AnomalyDetectionPipeline:
         df = pd.DataFrame.from_dict(metrics)
         df = df[sorted(df.columns)]
 
-        anomaly_score = self.pipeline.decision_function(df)[0]
+        anomaly_score = self.decision_function(df)[0]  # pyright: ignore
 
         return MetricCollection(
             provider="anomaly-detection-model",
